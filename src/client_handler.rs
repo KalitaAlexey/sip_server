@@ -1,33 +1,14 @@
-use async_std::sync::Mutex;
+use async_std::net::SocketAddr;
 use async_trait::async_trait;
-use libsip::{Domain, SipMessage, Transport, UriSchema};
-use std::sync::Arc;
+use libsip::SipMessage;
 
-use crate::{utils::Utils, BrokerMsg, Result, Sender};
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct ClientHandlerId(pub(crate) u32);
+use crate::Result;
 
 pub enum ClientHandlerMsg {
-    SendToClient(ClientHandlerId, SipMessage),
-    SendToBroker(BrokerMsg),
+    SendToClient(SocketAddr, SipMessage),
 }
 
 #[async_trait]
 pub trait ClientHandler {
-    type System;
-
-    fn new(
-        id: ClientHandlerId,
-        transport: Transport,
-        schema: UriSchema,
-        domain: Domain,
-        utils: Arc<Utils>,
-        sender: Sender<ClientHandlerMsg>,
-        system: Arc<Mutex<Self::System>>,
-    ) -> Self;
-
-    fn id(&self) -> ClientHandlerId;
-
     async fn on_msg(&mut self, msg: SipMessage) -> Result<()>;
 }
