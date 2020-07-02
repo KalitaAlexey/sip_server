@@ -42,15 +42,12 @@ impl ClientHandler for MyClientHandler {
             match method {
                 Method::Register => self.on_register(msg).await,
                 Method::Subscribe => self.on_subscribe(msg).await,
-                Method::Invite => self.on_invite(msg).await,
-                Method::Bye => self.on_bye(msg).await,
-                Method::Ack => self.on_ack(msg).await,
+                Method::Invite | Method::Bye | Method::Ack | Method::Cancel => self.route_request(msg).await,
                 _ => self.on_req(msg).await,
             }
         } else {
             match method {
-                Method::Invite => self.on_invite_res(msg).await,
-                Method::Bye => self.on_bye_res(msg).await,
+                Method::Invite | Method::Bye | Method::Cancel => self.route_response(msg).await,
                 _ => Ok(()),
             }
         }
@@ -95,11 +92,11 @@ impl MyClientHandler {
         Ok(())
     }
 
-    async fn on_invite(&mut self, mut msg: SipMessage) -> Result<()> {
+    async fn route_request(&mut self, mut msg: SipMessage) -> Result<()> {
         let callee = if let Some(callee) = Self::to_username(&msg) {
             callee
         } else {
-            eprintln!("on_invite: no `username` in `To`");
+            eprintln!("route_request: no `username` in `To`");
             return Ok(());
         };
         let callee_addr = {
@@ -107,16 +104,16 @@ impl MyClientHandler {
             system.get_registration(&callee).map(Clone::clone)
         };
         let callee_addr = if let Some(callee_addr) = callee_addr {
-            println!("on_invite: callee \"{}\" is registered", callee);
+            println!("route_request: callee \"{}\" is registered", callee);
             callee_addr
         } else {
-            eprintln!("on_invite: callee \"{}\" isn't registered", callee);
+            eprintln!("route_request: callee \"{}\" isn't registered", callee);
             return self.send_res(&msg, 404).await;
         };
         let via_branch = if let Some(via_branch) = Self::get_via_branch(&msg) {
             via_branch
         } else {
-            eprintln!("on_invite: no `branch` in `Via`");
+            eprintln!("route_request: no `branch` in `Via`");
             return self.send_res(&msg, 400).await;
         };
         let h =
@@ -148,86 +145,11 @@ impl MyClientHandler {
         Ok(())
     }
 
-    async fn on_bye(&mut self, mut msg: SipMessage) -> Result<()> {
-        let callee = if let Some(callee) = Self::to_username(&msg) {
-            callee
-        } else {
-            eprintln!("on_bye: no `username` in `To`");
-            return Ok(());
-        };
-        let callee_addr = {
-            let system = self.system.lock().await;
-            system.get_registration(&callee).map(Clone::clone)
-        };
-        let callee_addr = if let Some(callee_addr) = callee_addr {
-            println!("on_bye: callee \"{}\" is registered", callee);
-            callee_addr
-        } else {
-            eprintln!("on_bye: callee \"{}\" isn't registered", callee);
-            return self.send_res(&msg, 404).await;
-        };
-        let via_branch = if let Some(via_branch) = Self::get_via_branch(&msg) {
-            via_branch
-        } else {
-            eprintln!("on_bye: no `branch` in `Via`");
-            return self.send_res(&msg, 400).await;
-        };
-        let h =
-            msg.headers_mut().0.iter_mut().find(
-                |h| {
-                    if let Header::Via(_) = h {
-                        true
-                    } else {
-                        false
-                    }
-                },
-            );
-        if let Some(h) = h {
-            *h = self.via_hdr_with_branch(via_branch);
-        }
-        let h = msg.headers_mut().0.iter_mut().find(|h| {
-            if let Header::Contact(_) = h {
-                true
-            } else {
-                false
-            }
-        });
-        if let Some(h) = h {
-            *h = self.contact_hdr();
-        }
-        self.sender
-            .send(ClientHandlerMsg::SendToClient(callee_addr, msg))
-            .await?;
-        Ok(())
-    }
-
-    async fn on_ack(&mut self, msg: SipMessage) -> Result<()> {
-        let callee = if let Some(callee) = Self::to_username(&msg) {
-            callee
-        } else {
-            eprintln!("on_ack: no `username` in `To`");
-            return Ok(());
-        };
-        let callee_addr = {
-            let system = self.system.lock().await;
-            system.get_registration(&callee).map(Clone::clone)
-        };
-        if let Some(callee_addr) = callee_addr {
-            println!("on_ack: callee \"{}\" is registered", callee);
-            self.sender
-                .send(ClientHandlerMsg::SendToClient(callee_addr, msg))
-                .await?;
-        } else {
-            eprintln!("on_ack: callee \"{}\" isn't registered", callee);
-        }
-        Ok(())
-    }
-
-    async fn on_invite_res(&mut self, msg: SipMessage) -> Result<()> {
+    async fn route_response(&mut self, msg: SipMessage) -> Result<()> {
         let caller = if let Some(caller) = Self::from_username(&msg) {
             caller
         } else {
-            eprintln!("on_invite_res: no `username` in `From`");
+            eprintln!("route_response: no `username` in `From`");
             return Ok(());
         };
         let caller_addr = {
@@ -235,36 +157,13 @@ impl MyClientHandler {
             system.get_registration(&caller).map(Clone::clone)
         };
         if let Some(caller_addr) = caller_addr {
-            println!("on_invite_res: caller \"{}\" is registered", caller);
+            println!("route_response: caller \"{}\" is registered", caller);
             self.sender
                 .send(ClientHandlerMsg::SendToClient(caller_addr, msg))
                 .await?;
             Ok(())
         } else {
-            eprintln!("on_invite_res: caller \"{}\" isn't registered", caller);
-            Ok(())
-        }
-    }
-
-    async fn on_bye_res(&mut self, msg: SipMessage) -> Result<()> {
-        let caller = if let Some(caller) = Self::from_username(&msg) {
-            caller
-        } else {
-            eprintln!("on_bye_res: no `username` in `From`");
-            return Ok(());
-        };
-        let caller_addr = {
-            let system = self.system.lock().await;
-            system.get_registration(&caller).map(Clone::clone)
-        };
-        if let Some(caller_addr) = caller_addr {
-            println!("on_bye_res: caller \"{}\" is registered", caller);
-            self.sender
-                .send(ClientHandlerMsg::SendToClient(caller_addr, msg))
-                .await?;
-            Ok(())
-        } else {
-            eprintln!("on_bye_res: caller \"{}\" isn't registered", caller);
+            eprintln!("route_response: caller \"{}\" isn't registered", caller);
             Ok(())
         }
     }
