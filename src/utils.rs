@@ -31,7 +31,7 @@ pub fn set_to_tag(msg: &mut SipMessage, tag: &str) {
             .iter_mut()
             .find_map(|h| if let Header::To(h) = h { Some(h) } else { None });
         if let Some(h) = h {
-            h.set_param("tag", tag);
+            h.set_param("tag", Some(tag));
         }
     }
 }

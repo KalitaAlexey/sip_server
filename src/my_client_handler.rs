@@ -5,7 +5,7 @@ use libsip::{
     Domain, Header, Method, NamedHeader, RequestGenerator, ResponseGenerator, SipMessage,
     Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use crate::{
     client_handler::{ClientHandler, ClientHandlerMsg},
@@ -42,7 +42,9 @@ impl ClientHandler for MyClientHandler {
             match method {
                 Method::Register => self.on_register(msg).await,
                 Method::Subscribe => self.on_subscribe(msg).await,
-                Method::Invite | Method::Bye | Method::Ack | Method::Cancel => self.route_request(msg).await,
+                Method::Invite | Method::Bye | Method::Ack | Method::Cancel => {
+                    self.route_request(msg).await
+                }
                 _ => self.on_req(msg).await,
             }
         } else {
@@ -86,9 +88,26 @@ impl MyClientHandler {
             eprintln!("on_register: no `username` in `To`");
             return self.send_res(&msg, 400).await;
         };
-        self.send_res(&msg, 200).await?;
+        let expires = if let Some(expires) = Self::get_expires(&msg) {
+            expires
+        } else {
+            eprintln!("on_register: no `Expires`");
+            return self.send_res(&msg, 400).await;
+        };
+        self.prepare_and_send_res(&msg, 200, |generator| {
+            generator.header(Header::Expires(expires))
+        })
+        .await?;
         let mut system = self.system.lock().await;
-        system.add_registration(username, self.addr.clone());
+        if expires > 0 {
+            if system.add_registration(username.clone(), self.addr.clone()) {
+                println!("user \"{}\" is registered", username);
+            }
+        } else {
+            if system.remove_registration(&username) {
+                println!("user \"{}\" is unregistered", username);
+            }
+        }
         Ok(())
     }
 
@@ -185,7 +204,7 @@ impl MyClientHandler {
                 return Ok(());
             };
             let to_hdr = if let Some(Header::To(to_hdr)) = headers.to() {
-                to_hdr.param("tag", "123456")
+                to_hdr.param("tag", Some("123456"))
             } else {
                 eprintln!("on_subscribe: no `To`");
                 return Ok(());
@@ -230,27 +249,46 @@ impl MyClientHandler {
         Ok(())
     }
 
+    async fn prepare_and_send_res<F>(&mut self, req: &SipMessage, code: u32, f: F) -> Result<()>
+    where
+        F: FnOnce(ResponseGenerator) -> ResponseGenerator,
+    {
+        let generator = self.create_response_generator(req, code);
+        let generator = f(generator);
+        let res = generator.build().expect("failed to generate response");
+        self.send_to_client(res).await
+    }
+
     async fn send_res(&mut self, req: &SipMessage, code: u32) -> Result<()> {
+        let res = self
+            .create_response_generator(req, code)
+            .build()
+            .expect("failed to generate response");
+        self.send_to_client(res).await
+    }
+
+    fn create_response_generator(&self, req: &SipMessage, code: u32) -> ResponseGenerator {
         if let SipMessage::Request { headers, .. } = req {
-            let res_hdrs = headers
+            let headers = headers
                 .0
                 .iter()
                 .filter_map(|h| match h {
                     Header::Contact(_) | Header::ContentLength(_) => None,
+                    Header::To(h) => Some(Header::To(h.clone().param("tag", Some("123456")))),
+                    // Via must be kept: 17.1.3 Matching Responses to Client Transactions
                     _ => Some(h.clone()),
                 })
                 .collect();
-            let mut res = ResponseGenerator::new()
+            ResponseGenerator::new()
                 .code(code)
-                .headers(res_hdrs)
+                .headers(headers)
+                // 8.1.1.8 Contact "URI at which the UA would like to receive requests"
                 .header(self.contact_hdr())
+                // 20.14 Content-Length "If no body is present in a message, then the Content-Length header field value MUST be set to zero"
                 .header(Header::ContentLength(0))
-                .build()
-                .expect("failed to generate response");
-            utils::set_to_tag(&mut res, "123456");
-            self.send_to_client(res.clone()).await?;
+        } else {
+            panic!("not request");
         }
-        Ok(())
     }
 
     fn from_username(msg: &SipMessage) -> Option<String> {
@@ -307,6 +345,28 @@ impl MyClientHandler {
                     None
                 }
             })
+        } else {
+            None
+        }
+    }
+
+    fn get_expires(msg: &SipMessage) -> Option<u32> {
+        let headers = msg.headers();
+        let expires = if let Some(Header::Contact(hdr)) = headers.contact() {
+            hdr.params.get("expires").and_then(|expires| {
+                if let Some(expires) = expires {
+                    u32::from_str(expires).ok()
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+        if expires.is_some() {
+            expires
+        } else if let Some(Header::Expires(expires)) = headers.expires() {
+            Some(expires)
         } else {
             None
         }
