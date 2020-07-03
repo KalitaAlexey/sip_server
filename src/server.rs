@@ -1,37 +1,41 @@
-use async_std::{
-    net::{SocketAddr, UdpSocket},
-    sync::{Arc, Mutex},
-    task,
-};
+use async_std::net::{SocketAddr, UdpSocket};
 use log::error;
 use nom::error::VerboseError;
 
 use crate::client_handler::{ClientHandler, ClientHandlerMsg};
 use crate::client_handler_mgr::ClientHandlerMgr;
 use crate::Receiver;
-use futures::StreamExt;
+use futures::{join, StreamExt};
 
-pub struct Server<Mgr> {
-    mgr: Mutex<Mgr>,
-    socket: UdpSocket,
-}
+pub struct Server;
 
-impl<Mgr: ClientHandlerMgr + Send + 'static> Server<Mgr> {
-    pub async fn run(mgr: Mgr, receiver: Receiver<ClientHandlerMsg>, addr: SocketAddr) {
+impl Server {
+    pub async fn run<Mgr: ClientHandlerMgr>(
+        mgr: Mgr,
+        receiver: Receiver<ClientHandlerMsg>,
+        addr: SocketAddr,
+    ) {
         let socket = std::net::UdpSocket::bind(addr).expect("failed to bind udp socket");
         let socket = UdpSocket::from(socket);
-        let server = Self {
-            mgr: Mutex::new(mgr),
-            socket,
+        let socket_reader = SocketReader {
+            socket: &socket,
+            mgr,
         };
-        let server = Arc::new(server);
-        let handle1 = task::spawn(server.clone().read_data());
-        let handle2 = task::spawn(server.read_msgs(receiver));
-        handle1.await;
-        handle2.await;
+        let msg_reader = MsgReader {
+            socket: &socket,
+            receiver,
+        };
+        join!(socket_reader.run(), msg_reader.run());
     }
+}
 
-    async fn read_data(self: Arc<Self>) {
+pub struct SocketReader<'a, Mgr> {
+    socket: &'a UdpSocket,
+    mgr: Mgr,
+}
+
+impl<'a, Mgr: ClientHandlerMgr> SocketReader<'a, Mgr> {
+    pub async fn run(mut self) {
         let mut buffer = [0; 4096];
         loop {
             match self.socket.recv_from(&mut buffer).await {
@@ -51,8 +55,29 @@ impl<Mgr: ClientHandlerMgr + Send + 'static> Server<Mgr> {
         }
     }
 
-    async fn read_msgs(self: Arc<Self>, mut receiver: Receiver<ClientHandlerMsg>) {
-        while let Some(msg) = receiver.next().await {
+    async fn on_data(&mut self, addr: SocketAddr, buffer: &[u8]) {
+        match libsip::parse_message::<VerboseError<&[u8]>>(&buffer) {
+            Ok((_, msg)) => {
+                let handler = self.mgr.get_handler(addr);
+                if let Err(e) = handler.on_msg(msg).await {
+                    error!("handler.on_msg failed: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("libsip::parse_message failed: {}", e);
+            }
+        };
+    }
+}
+
+pub struct MsgReader<'a> {
+    socket: &'a UdpSocket,
+    receiver: Receiver<ClientHandlerMsg>,
+}
+
+impl<'a> MsgReader<'a> {
+    pub async fn run(mut self) {
+        while let Some(msg) = self.receiver.next().await {
             self.on_msg(msg).await;
         }
     }
@@ -65,20 +90,5 @@ impl<Mgr: ClientHandlerMgr + Send + 'static> Server<Mgr> {
                 }
             }
         }
-    }
-
-    async fn on_data(&self, addr: SocketAddr, buffer: &[u8]) {
-        match libsip::parse_message::<VerboseError<&[u8]>>(&buffer) {
-            Ok((_, msg)) => {
-                let mut mgr = self.mgr.lock().await;
-                let handler = mgr.get_handler(addr);
-                if let Err(e) = handler.on_msg(msg).await {
-                    error!("handler.on_msg failed: {}", e);
-                }
-            }
-            Err(e) => {
-                error!("libsip::parse_message failed: {}", e);
-            }
-        };
     }
 }
