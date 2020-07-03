@@ -1,6 +1,5 @@
 use async_std::{sync::Mutex, task};
 use futures::SinkExt;
-use libsip::{Header, SipMessage};
 use std::time::Duration;
 
 use crate::{client_handler::ClientHandlerMsg, via_branch_generator::ViaBranchGenerator, Sender};
@@ -18,21 +17,6 @@ impl Utils {
 
     pub async fn via_branch(&self) -> String {
         self.via_branch_generator.lock().await.branch()
-    }
-}
-
-pub fn set_to_tag(msg: &mut SipMessage, tag: &str) {
-    if let SipMessage::Response {
-        ref mut headers, ..
-    } = msg
-    {
-        let h = headers
-            .0
-            .iter_mut()
-            .find_map(|h| if let Header::To(h) = h { Some(h) } else { None });
-        if let Some(h) = h {
-            h.set_param("tag", Some(tag));
-        }
     }
 }
 

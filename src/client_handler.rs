@@ -4,6 +4,7 @@ use libsip::SipMessage;
 
 use crate::Result;
 
+#[derive(Debug)]
 pub enum ClientHandlerMsg {
     SendToClient(SocketAddr, SipMessage),
 }

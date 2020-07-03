@@ -2,10 +2,11 @@
 #![feature(async_closure)]
 
 use async_std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr},
     task,
 };
 use futures::channel::mpsc;
+use std::net::SocketAddr;
 
 mod client_handler;
 mod client_handler_mgr;
@@ -32,10 +33,7 @@ fn main() {
     let ip = args.next();
     let port = args.next();
     let (ip, port) = if let (Some(ip), Some(port)) = (ip, port) {
-        (
-            ip.to_string().parse::<Ipv4Addr>(),
-            port.to_string().parse::<u16>(),
-        )
+        (ip.parse::<Ipv4Addr>(), port.parse::<u16>())
     } else {
         eprintln!("<ip> <port>");
         return;
@@ -46,15 +44,14 @@ fn main() {
         eprintln!("Invalid <ip> or <port>");
         return;
     };
-    let addr = SocketAddr::new(IpAddr::V4(ip.clone()), port);
+    env_logger::init();
+    let addr = SocketAddr::new(IpAddr::V4(ip), port);
     let (sender, receiver) = mpsc::unbounded();
     let mgr = MyClientHandlerMgr::new(
         Transport::Udp,
         UriSchema::Sip,
-        Domain::Ipv4(ip.clone(), Some(port)),
+        Domain::Ipv4(ip, Some(port)),
         sender,
     );
-    let fut = Server::run(mgr, receiver, addr);
-    task::spawn(fut);
-    loop {}
+    let _ = task::block_on(Server::run(mgr, receiver, addr));
 }
