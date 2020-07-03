@@ -23,7 +23,11 @@ pub struct Server<Mgr> {
 }
 
 impl<Mgr: ClientHandlerMgr + Send + 'static> Server<Mgr> {
-    pub async fn run(mgr: Mgr, receiver: Receiver<ClientHandlerMsg>, addr: &str) -> Result<()> {
+    pub async fn run(
+        mgr: Mgr,
+        receiver: Receiver<ClientHandlerMsg>,
+        addr: SocketAddr,
+    ) -> Result<()> {
         let socket = UdpSocket::bind(addr)?;
         socket
             .set_read_timeout(Some(Duration::from_millis(100)))
