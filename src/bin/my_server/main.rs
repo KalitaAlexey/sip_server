@@ -1,33 +1,15 @@
-#![recursion_limit = "1024"]
-#![feature(async_closure)]
-
-use async_std::{
-    net::{IpAddr, Ipv4Addr},
-    task,
-};
+use async_std::task;
 use futures::channel::mpsc;
-use std::net::SocketAddr;
+use libsip::{Domain, Transport, UriSchema};
+use sip_server::Server;
+use std::env;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-mod client;
-mod client_event;
-mod client_manager;
 mod my_client;
 mod my_client_manager;
 mod my_system;
-mod server;
-mod utils;
-mod via_branch_generator;
 
-pub use self::{client::Client, client_event::ClientEvent, client_manager::ClientManager};
-use libsip::{Domain, Transport, UriSchema};
 use my_client_manager::MyClientManager;
-use server::Server;
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-type Sender<T> = mpsc::UnboundedSender<T>;
-type Receiver<T> = mpsc::UnboundedReceiver<T>;
-
-use std::env;
 
 fn main() {
     let mut args = env::args();

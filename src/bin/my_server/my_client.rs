@@ -1,9 +1,5 @@
-use crate::{
-    my_system::MySystem,
-    utils::{self, Utils},
-};
-use crate::{Client, ClientEvent, Result, Sender};
-use async_std::{net::SocketAddr, sync::Mutex, task};
+use crate::my_system::MySystem;
+use async_std::{net::SocketAddr, sync::Mutex};
 use async_trait::async_trait;
 use futures::sink::SinkExt;
 use libsip::{
@@ -11,6 +7,7 @@ use libsip::{
     Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
 };
 use log::{debug, info, warn};
+use sip_server::{Client, ClientEvent, Result, Sender, Utils};
 use std::{str::FromStr, sync::Arc};
 
 pub struct MyClient {
@@ -237,10 +234,7 @@ impl MyClient {
                 .header(Header::ContentLength(0))
                 .build()
                 .expect("failed to generate notify");
-            let msg = ClientEvent::Send(self.addr, req);
-            let sender = self.sender.clone();
-            // Maybe it should be saved so it can be waited for before shutdown
-            task::spawn(utils::delay_and_send_msg(sender, 2, msg));
+            self.send_to_client(req).await?;
         }
         Ok(())
     }
