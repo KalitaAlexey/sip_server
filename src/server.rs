@@ -1,27 +1,24 @@
+use crate::{Client, ClientEvent, ClientManager, Receiver};
 use async_std::net::{SocketAddr, UdpSocket};
+use futures::{join, StreamExt};
 use log::error;
 use nom::error::VerboseError;
-
-use crate::client_handler::{ClientHandler, ClientHandlerMsg};
-use crate::client_handler_mgr::ClientHandlerMgr;
-use crate::Receiver;
-use futures::{join, StreamExt};
 
 pub struct Server;
 
 impl Server {
-    pub async fn run<Mgr: ClientHandlerMgr>(
-        mgr: Mgr,
-        receiver: Receiver<ClientHandlerMsg>,
+    pub async fn run<M: ClientManager>(
+        manager: M,
+        receiver: Receiver<ClientEvent>,
         addr: SocketAddr,
     ) {
         let socket = std::net::UdpSocket::bind(addr).expect("failed to bind udp socket");
         let socket = UdpSocket::from(socket);
-        let socket_reader = SocketReader {
+        let socket_reader = SocketWorker {
             socket: &socket,
-            mgr,
+            manager,
         };
-        let msg_reader = MsgReader {
+        let msg_reader = ClientEventWorker {
             socket: &socket,
             receiver,
         };
@@ -29,12 +26,12 @@ impl Server {
     }
 }
 
-pub struct SocketReader<'a, Mgr> {
+pub struct SocketWorker<'a, M> {
     socket: &'a UdpSocket,
-    mgr: Mgr,
+    manager: M,
 }
 
-impl<'a, Mgr: ClientHandlerMgr> SocketReader<'a, Mgr> {
+impl<'a, M: ClientManager> SocketWorker<'a, M> {
     pub async fn run(mut self) {
         let mut buffer = [0; 4096];
         loop {
@@ -58,8 +55,8 @@ impl<'a, Mgr: ClientHandlerMgr> SocketReader<'a, Mgr> {
     async fn on_data(&mut self, addr: SocketAddr, buffer: &[u8]) {
         match libsip::parse_message::<VerboseError<&[u8]>>(&buffer) {
             Ok((_, msg)) => {
-                let handler = self.mgr.get_handler(addr);
-                if let Err(e) = handler.on_msg(msg).await {
+                let client = self.manager.get_client(addr);
+                if let Err(e) = client.on_message(msg).await {
                     error!("handler.on_msg failed: {}", e);
                 }
             }
@@ -70,22 +67,26 @@ impl<'a, Mgr: ClientHandlerMgr> SocketReader<'a, Mgr> {
     }
 }
 
-pub struct MsgReader<'a> {
+pub struct ClientEventWorker<'a> {
     socket: &'a UdpSocket,
-    receiver: Receiver<ClientHandlerMsg>,
+    receiver: Receiver<ClientEvent>,
 }
 
-impl<'a> MsgReader<'a> {
+impl<'a> ClientEventWorker<'a> {
     pub async fn run(mut self) {
-        while let Some(msg) = self.receiver.next().await {
-            self.on_msg(msg).await;
+        while let Some(event) = self.receiver.next().await {
+            self.on_event(event).await;
         }
     }
 
-    async fn on_msg(&self, msg: ClientHandlerMsg) {
-        match msg {
-            ClientHandlerMsg::SendToClient(addr, msg) => {
-                if let Err(e) = self.socket.send_to(msg.to_string().as_bytes(), addr).await {
+    async fn on_event(&self, event: ClientEvent) {
+        match event {
+            ClientEvent::Send(addr, message) => {
+                if let Err(e) = self
+                    .socket
+                    .send_to(message.to_string().as_bytes(), addr)
+                    .await
+                {
                     error!("send_to failed: {}", e);
                 }
             }

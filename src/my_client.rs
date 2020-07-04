@@ -1,3 +1,8 @@
+use crate::{
+    my_system::MySystem,
+    utils::{self, Utils},
+};
+use crate::{Client, ClientEvent, Result, Sender};
 use async_std::{net::SocketAddr, sync::Mutex, task};
 use async_trait::async_trait;
 use futures::sink::SinkExt;
@@ -8,26 +13,19 @@ use libsip::{
 use log::{debug, info, warn};
 use std::{str::FromStr, sync::Arc};
 
-use crate::{
-    client_handler::{ClientHandler, ClientHandlerMsg},
-    my_system::MySystem,
-    utils::{self, Utils},
-    Result, Sender,
-};
-
-pub struct MyClientHandler {
+pub struct MyClient {
     addr: SocketAddr,
     transport: Transport,
     schema: UriSchema,
     domain: Domain,
     utils: Arc<Utils>,
-    sender: Sender<ClientHandlerMsg>,
+    sender: Sender<ClientEvent>,
     system: Arc<Mutex<MySystem>>,
 }
 
 #[async_trait]
-impl ClientHandler for MyClientHandler {
-    async fn on_msg(&mut self, msg: SipMessage) -> Result<()> {
+impl Client for MyClient {
+    async fn on_message(&mut self, msg: SipMessage) -> Result<()> {
         let (request, method) = match &msg {
             SipMessage::Request { method, .. } => (true, *method),
             SipMessage::Response { headers, .. } => {
@@ -57,14 +55,14 @@ impl ClientHandler for MyClientHandler {
     }
 }
 
-impl MyClientHandler {
+impl MyClient {
     pub fn new(
         addr: SocketAddr,
         transport: Transport,
         schema: UriSchema,
         domain: Domain,
         utils: Arc<Utils>,
-        sender: Sender<ClientHandlerMsg>,
+        sender: Sender<ClientEvent>,
         system: Arc<Mutex<MySystem>>,
     ) -> Self {
         Self {
@@ -158,7 +156,7 @@ impl MyClientHandler {
             *h = self.contact_hdr();
         }
         self.sender
-            .send(ClientHandlerMsg::SendToClient(callee_addr, msg))
+            .send(ClientEvent::Send(callee_addr, msg))
             .await?;
         Ok(())
     }
@@ -177,7 +175,7 @@ impl MyClientHandler {
         if let Some(caller_addr) = caller_addr {
             debug!("route_response: caller \"{}\" is registered", caller);
             self.sender
-                .send(ClientHandlerMsg::SendToClient(caller_addr, msg))
+                .send(ClientEvent::Send(caller_addr, msg))
                 .await?;
             Ok(())
         } else {
@@ -239,7 +237,7 @@ impl MyClientHandler {
                 .header(Header::ContentLength(0))
                 .build()
                 .expect("failed to generate notify");
-            let msg = ClientHandlerMsg::SendToClient(self.addr, req);
+            let msg = ClientEvent::Send(self.addr, req);
             let sender = self.sender.clone();
             // Maybe it should be saved so it can be waited for before shutdown
             task::spawn(utils::delay_and_send_msg(sender, 2, msg));
@@ -315,7 +313,7 @@ impl MyClientHandler {
     }
 
     async fn send_to_client(&mut self, msg: SipMessage) -> Result<()> {
-        let msg = ClientHandlerMsg::SendToClient(self.addr, msg);
+        let msg = ClientEvent::Send(self.addr, msg);
         self.sender.send(msg).await?;
         Ok(())
     }

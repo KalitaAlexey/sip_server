@@ -1,3 +1,5 @@
+use crate::{my_client::MyClient, my_system::MySystem, utils::Utils};
+use crate::{ClientEvent, ClientManager, Sender};
 use async_std::{net::SocketAddr, sync::Mutex};
 use libsip::{Domain, Transport, UriSchema};
 use std::{
@@ -5,28 +7,23 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    client_handler::ClientHandlerMsg, client_handler_mgr::ClientHandlerMgr,
-    my_client_handler::MyClientHandler, my_system::MySystem, utils::Utils, Sender,
-};
-
-pub struct MyClientHandlerMgr {
+pub struct MyClientManager {
     transport: Transport,
     schema: UriSchema,
     domain: Domain,
-    sender: Sender<ClientHandlerMsg>,
-    handlers: HashMap<SocketAddr, MyClientHandler>,
+    sender: Sender<ClientEvent>,
+    clients: HashMap<SocketAddr, MyClient>,
     utils: Arc<Utils>,
     system: Arc<Mutex<MySystem>>,
 }
 
-impl ClientHandlerMgr for MyClientHandlerMgr {
-    type Handler = MyClientHandler;
+impl ClientManager for MyClientManager {
+    type Client = MyClient;
 
-    fn get_handler(&mut self, addr: SocketAddr) -> &mut Self::Handler {
-        match self.handlers.entry(addr) {
+    fn get_client(&mut self, addr: SocketAddr) -> &mut Self::Client {
+        match self.clients.entry(addr) {
             Entry::Vacant(entry) => {
-                let h = MyClientHandler::new(
+                let h = MyClient::new(
                     addr,
                     self.transport,
                     self.schema,
@@ -42,19 +39,19 @@ impl ClientHandlerMgr for MyClientHandlerMgr {
     }
 }
 
-impl MyClientHandlerMgr {
+impl MyClientManager {
     pub fn new(
         transport: Transport,
         schema: UriSchema,
         domain: Domain,
-        sender: Sender<ClientHandlerMsg>,
+        sender: Sender<ClientEvent>,
     ) -> Self {
         Self {
             transport,
             schema,
             domain,
             sender,
-            handlers: HashMap::new(),
+            clients: HashMap::new(),
             system: Arc::new(Mutex::new(MySystem::new())),
             utils: Arc::new(Utils::new()),
         }

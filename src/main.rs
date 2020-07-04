@@ -8,17 +8,19 @@ use async_std::{
 use futures::channel::mpsc;
 use std::net::SocketAddr;
 
-mod client_handler;
-mod client_handler_mgr;
-mod my_client_handler;
-mod my_client_handler_mgr;
+mod client;
+mod client_event;
+mod client_manager;
+mod my_client;
+mod my_client_manager;
 mod my_system;
 mod server;
 mod utils;
 mod via_branch_generator;
 
+pub use self::{client::Client, client_event::ClientEvent, client_manager::ClientManager};
 use libsip::{Domain, Transport, UriSchema};
-use my_client_handler_mgr::MyClientHandlerMgr;
+use my_client_manager::MyClientManager;
 use server::Server;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -47,11 +49,11 @@ fn main() {
     env_logger::init();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
     let (sender, receiver) = mpsc::unbounded();
-    let mgr = MyClientHandlerMgr::new(
+    let manager = MyClientManager::new(
         Transport::Udp,
         UriSchema::Sip,
         Domain::Ipv4(ip, Some(port)),
         sender,
     );
-    let _ = task::block_on(Server::run(mgr, receiver, addr));
+    let _ = task::block_on(Server::run(manager, receiver, addr));
 }
