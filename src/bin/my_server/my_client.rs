@@ -6,7 +6,7 @@ use libsip::{
     Domain, Header, Method, NamedHeader, RequestGenerator, ResponseGenerator, SipMessage,
     Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
 };
-use log::{debug, info, warn};
+use log::{debug, warn};
 use sip_server::{Client, ClientEvent, Result, Sender, Utils};
 use std::{str::FromStr, sync::Arc};
 
@@ -96,11 +96,11 @@ impl MyClient {
         .await?;
         let mut system = self.system.lock().await;
         if expires > 0 {
-            if system.add_registration(username.clone(), self.addr) {
-                info!("user \"{}\" is registered", username);
-            }
-        } else if system.remove_registration(&username) {
-            info!("user \"{}\" is unregistered", username);
+            system
+                .registrations
+                .register_user(username.clone(), self.addr);
+        } else {
+            system.registrations.unregister_user(&username);
         }
         Ok(())
     }
@@ -114,7 +114,7 @@ impl MyClient {
         };
         let callee_addr = {
             let system = self.system.lock().await;
-            system.get_registration(&callee).map(Clone::clone)
+            system.registrations.user_addr(&callee)
         };
         let callee_addr = if let Some(callee_addr) = callee_addr {
             warn!("route_request: callee \"{}\" is registered", callee);
@@ -167,7 +167,7 @@ impl MyClient {
         };
         let caller_addr = {
             let system = self.system.lock().await;
-            system.get_registration(&caller).map(Clone::clone)
+            system.registrations.user_addr(&caller)
         };
         if let Some(caller_addr) = caller_addr {
             debug!("route_response: caller \"{}\" is registered", caller);
