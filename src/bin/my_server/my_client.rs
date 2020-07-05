@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use futures::sink::SinkExt;
 use libsip::{
     Domain, Header, Method, NamedHeader, RequestGenerator, ResponseGenerator, SipMessage,
-    Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
+    SipMessageExt, SubscriptionState, Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
 };
-use log::{debug, warn};
+use log::{debug, info, warn};
 use sip_server::{Client, ClientEvent, Result, Sender, Utils};
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 pub struct MyClient {
     addr: SocketAddr,
@@ -78,13 +78,13 @@ impl MyClient {
     }
 
     async fn on_register(&mut self, msg: SipMessage) -> Result<()> {
-        let username = if let Some(username) = Self::get_to_username(&msg) {
+        let username = if let Some(username) = msg.to_header_username() {
             username
         } else {
             warn!("on_register: no `username` in `To`");
             return self.send_res(&msg, 400).await;
         };
-        let expires = if let Some(expires) = Self::get_expires(&msg) {
+        let expires = if let Some(expires) = msg.contact_header_expires() {
             expires
         } else {
             warn!("on_register: no `Expires`");
@@ -106,7 +106,7 @@ impl MyClient {
     }
 
     async fn route_request(&mut self, mut msg: SipMessage) -> Result<()> {
-        let callee = if let Some(callee) = Self::get_to_username(&msg) {
+        let callee = if let Some(callee) = msg.to_header_username() {
             callee
         } else {
             warn!("route_request: no `username` in `To`");
@@ -117,39 +117,22 @@ impl MyClient {
             system.registrations.user_addr(&callee)
         };
         let callee_addr = if let Some(callee_addr) = callee_addr {
-            warn!("route_request: callee \"{}\" is registered", callee);
+            info!("route_request: callee \"{}\" is registered", callee);
             callee_addr
         } else {
             warn!("route_request: callee \"{}\" isn't registered", callee);
             return self.send_res(&msg, 404).await;
         };
-        let via_branch = if let Some(via_branch) = Self::get_via_branch(&msg) {
-            via_branch
+        let via_branch = if let Some(via_branch) = msg.via_header_branch() {
+            via_branch.clone()
         } else {
             warn!("route_request: no `branch` in `Via`");
             return self.send_res(&msg, 400).await;
         };
-        let h =
-            msg.headers_mut().0.iter_mut().find(
-                |h| {
-                    if let Header::Via(_) = h {
-                        true
-                    } else {
-                        false
-                    }
-                },
-            );
-        if let Some(h) = h {
-            *h = self.via_hdr_with_branch(via_branch);
+        if let Some(h) = msg.via_header_mut() {
+            *h = self.via_hdr_with_branch(via_branch.clone());
         }
-        let h = msg.headers_mut().0.iter_mut().find(|h| {
-            if let Header::Contact(_) = h {
-                true
-            } else {
-                false
-            }
-        });
-        if let Some(h) = h {
+        if let Some(h) = msg.contact_header_mut() {
             *h = self.contact_hdr();
         }
         self.sender
@@ -159,7 +142,7 @@ impl MyClient {
     }
 
     async fn route_response(&mut self, msg: SipMessage) -> Result<()> {
-        let caller = if let Some(caller) = Self::from_username(&msg) {
+        let caller = if let Some(caller) = msg.from_header_username() {
             caller
         } else {
             warn!("route_response: no `username` in `From`");
@@ -219,18 +202,18 @@ impl MyClient {
             let req = RequestGenerator::new()
                 .method(Method::Notify)
                 .uri(uri)
-                .header(self.via_hdr().await)
+                .header(Header::Via(self.via_hdr().await))
                 .header(Header::From(to_hdr))
                 .header(Header::To(from_hdr))
                 .header(Header::Event(event))
                 .header(Header::MaxForwards(70))
                 .header(Header::CallId(call_id))
                 .header(Header::CSeq(50, Method::Notify))
-                .header(self.contact_hdr())
-                .header(Header::Other(
-                    String::from("Subscription-State"),
-                    String::from("active;expires=86400"),
-                ))
+                .header(Header::Contact(self.contact_hdr()))
+                .header(Header::SubscriptionState(SubscriptionState::Active {
+                    expires: Some(86400),
+                    parameters: HashMap::new(),
+                }))
                 .header(Header::ContentLength(0))
                 .build()
                 .expect("failed to generate notify");
@@ -274,35 +257,11 @@ impl MyClient {
                 .code(code)
                 .headers(headers)
                 // 8.1.1.8 Contact "URI at which the UA would like to receive requests"
-                .header(self.contact_hdr())
+                .header(Header::Contact(self.contact_hdr()))
                 // 20.14 Content-Length "If no body is present in a message, then the Content-Length header field value MUST be set to zero"
                 .header(Header::ContentLength(0))
         } else {
             panic!("not request");
-        }
-    }
-
-    fn from_username(msg: &SipMessage) -> Option<String> {
-        if let Some(Header::From(hdr)) = msg.headers().from() {
-            if let Some(auth) = hdr.uri.auth {
-                Some(auth.username)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    fn get_to_username(msg: &SipMessage) -> Option<String> {
-        if let Some(Header::To(hdr)) = msg.headers().to() {
-            if let Some(auth) = hdr.uri.auth {
-                Some(auth.username)
-            } else {
-                None
-            }
-        } else {
-            None
         }
     }
 
@@ -312,54 +271,18 @@ impl MyClient {
         Ok(())
     }
 
-    fn contact_hdr(&self) -> Header {
-        Header::Contact(NamedHeader::new(Uri::new(self.schema, self.domain.clone())))
+    fn contact_hdr(&self) -> NamedHeader {
+        NamedHeader::new(Uri::new(self.schema, self.domain.clone()))
     }
 
-    async fn via_hdr(&self) -> Header {
+    async fn via_hdr(&self) -> ViaHeader {
         let via_branch = self.utils.via_branch().await;
         self.via_hdr_with_branch(via_branch)
     }
 
-    fn via_hdr_with_branch(&self, branch: String) -> Header {
+    fn via_hdr_with_branch(&self, branch: String) -> ViaHeader {
         let via_uri = Uri::new_schemaless(self.domain.clone());
         let via_uri = via_uri.parameter(UriParam::Branch(branch));
-        Header::Via(ViaHeader::new(via_uri, self.transport))
-    }
-
-    fn get_via_branch(msg: &SipMessage) -> Option<String> {
-        if let Some(Header::Via(hdr)) = msg.headers().via() {
-            hdr.uri.parameters.iter().find_map(|p| {
-                if let UriParam::Branch(b) = p {
-                    Some(b.clone())
-                } else {
-                    None
-                }
-            })
-        } else {
-            None
-        }
-    }
-
-    fn get_expires(msg: &SipMessage) -> Option<u32> {
-        let headers = msg.headers();
-        let expires = if let Some(Header::Contact(hdr)) = headers.contact() {
-            hdr.parameters.get("expires").and_then(|expires| {
-                if let Some(expires) = expires {
-                    u32::from_str(expires).ok()
-                } else {
-                    None
-                }
-            })
-        } else {
-            None
-        };
-        if expires.is_some() {
-            expires
-        } else if let Some(Header::Expires(expires)) = headers.expires() {
-            Some(expires)
-        } else {
-            None
-        }
+        ViaHeader::new(via_uri, self.transport)
     }
 }
