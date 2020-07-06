@@ -12,8 +12,9 @@ impl Server {
         receiver: Receiver<ClientEvent>,
         addr: SocketAddr,
     ) {
-        let socket = std::net::UdpSocket::bind(addr).expect("failed to bind udp socket");
-        let socket = UdpSocket::from(socket);
+        let socket = UdpSocket::bind(addr)
+            .await
+            .expect("failed to bind udp socket");
         let socket_reader = SocketWorker {
             socket: &socket,
             manager,
@@ -54,12 +55,18 @@ impl<'a, M: ClientManager> SocketWorker<'a, M> {
 
     async fn on_data(&mut self, addr: SocketAddr, buffer: &[u8]) {
         match libsip::parse_message::<VerboseError<&[u8]>>(&buffer) {
-            Ok((_, msg)) => {
-                let client = self.manager.get_client(addr);
-                if let Err(e) = client.on_message(msg).await {
-                    error!("handler.on_msg failed: {}", e);
+            Ok((_, msg)) => match self.manager.get_client(addr).on_message(msg).await {
+                Ok(result) => {
+                    if let Some((addr, msg)) = result {
+                        if let Err(e) = self.manager.get_client(addr).on_routed_message(msg).await {
+                            error!("client.on_routed_message failed: {}", e);
+                        }
+                    }
                 }
-            }
+                Err(e) => {
+                    error!("client.on_message failed: {}", e);
+                }
+            },
             Err(e) => {
                 error!("libsip::parse_message failed: {}", e);
             }

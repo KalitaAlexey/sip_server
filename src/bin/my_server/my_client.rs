@@ -3,11 +3,12 @@ use async_std::{net::SocketAddr, sync::Mutex};
 use async_trait::async_trait;
 use futures::sink::SinkExt;
 use libsip::{
-    Domain, Header, Method, NamedHeader, RequestGenerator, ResponseGenerator, SipMessage,
-    SipMessageExt, SubscriptionState, Transport, Uri, UriAuth, UriParam, UriSchema, ViaHeader,
+    Domain, Header, Method, NamedHeader, RegisterRequestExt, RequestGenerator, ResponseGenerator,
+    SipMessage, SipMessageExt, SubscriptionState, Transport, Uri, UriAuth, UriParam, UriSchema,
+    ViaHeader,
 };
-use log::{debug, info, warn};
-use sip_server::{Client, ClientEvent, Result, Sender, Utils};
+use log::{debug, warn};
+use sip_server::{Client, ClientEvent, IncompleteDialogInfo, DialogInfo, Result, Sender, Utils};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct MyClient {
@@ -22,7 +23,7 @@ pub struct MyClient {
 
 #[async_trait]
 impl Client for MyClient {
-    async fn on_message(&mut self, msg: SipMessage) -> Result<()> {
+    async fn on_message(&mut self, msg: SipMessage) -> Result<Option<(SocketAddr, SipMessage)>> {
         let (request, method) = match &msg {
             SipMessage::Request { method, .. } => (true, *method),
             SipMessage::Response { headers, .. } => {
@@ -30,24 +31,41 @@ impl Client for MyClient {
                     (false, method)
                 } else {
                     warn!("no `CSeq` in response");
-                    return Ok(());
+                    return Ok(None);
                 }
             }
         };
         if request {
             match method {
-                Method::Register => self.on_register(msg).await,
-                Method::Subscribe => self.on_subscribe(msg).await,
+                Method::Register => {
+                    self.on_register(msg).await?;
+                    Ok(None)
+                }
+                Method::Subscribe => {
+                    self.on_subscribe(msg).await?;
+                    Ok(None)
+                }
                 Method::Invite | Method::Bye | Method::Ack | Method::Cancel => {
                     self.route_request(msg).await
                 }
-                _ => self.on_req(msg).await,
+                _ => {
+                    self.on_req(msg).await?;
+                    Ok(None)
+                }
             }
         } else {
             match method {
                 Method::Invite | Method::Bye | Method::Cancel => self.route_response(msg).await,
-                _ => Ok(()),
+                _ => Ok(None),
             }
+        }
+    }
+
+    async fn on_routed_message(&mut self, message: SipMessage) -> Result<()> {
+        if message.is_request() {
+            self.on_routed_request(message).await
+        } else {
+            self.on_routed_response(message).await
         }
     }
 }
@@ -84,7 +102,7 @@ impl MyClient {
             warn!("on_register: no `username` in `To`");
             return self.send_res(&msg, 400).await;
         };
-        let expires = if let Some(expires) = msg.contact_header_expires() {
+        let expires = if let Some(expires) = msg.expires() {
             expires
         } else {
             warn!("on_register: no `Expires`");
@@ -105,29 +123,69 @@ impl MyClient {
         Ok(())
     }
 
-    async fn route_request(&mut self, mut msg: SipMessage) -> Result<()> {
+    async fn route_request(&mut self, mut msg: SipMessage) -> Result<Option<(SocketAddr, SipMessage)>> {
         let callee = if let Some(callee) = msg.to_header_username() {
             callee
         } else {
             warn!("route_request: no `username` in `To`");
-            return Ok(());
+            self.send_res(&msg, 400).await?;
+            return Ok(None);
+        };
+        if msg.via_header_branch().is_none() {
+            warn!("route_request: no `branch` in `Via`");
+            self.send_res(&msg, 400).await?;
+            return Ok(None);
         };
         let callee_addr = {
             let system = self.system.lock().await;
             system.registrations.user_addr(&callee)
         };
         let callee_addr = if let Some(callee_addr) = callee_addr {
-            info!("route_request: callee \"{}\" is registered", callee);
+            debug!("route_request: callee \"{}\" is registered", callee);
             callee_addr
         } else {
-            warn!("route_request: callee \"{}\" isn't registered", callee);
-            return self.send_res(&msg, 404).await;
+            debug!("route_request: callee \"{}\" isn't registered", callee);
+            self.send_res(&msg, 404).await?;
+            return Ok(None);
         };
+        if msg.to_header_tag().is_none() {
+            let (from_tag, call_id) = {
+                let from_tag = if let Some(from_tag) = msg.from_header_tag() {
+                    from_tag
+                } else {
+                    warn!("route_request: no `tag` in `From`");
+                    self.send_res(&msg, 400).await?;
+                    return Ok(None);
+                };
+                let call_id = if let Some(call_id) = msg.call_id() {
+                    call_id
+                } else {
+                    warn!("route_request: no `Call-ID`");
+                    self.send_res(&msg, 400).await?;
+                    return Ok(None);
+                };
+                (from_tag.clone(), call_id.clone())
+            };
+            let new_to_tag = "toabcd1234".to_string();
+            let new_from_tag = "fromabcd1234".to_string();
+            msg.set_from_header_tag(new_from_tag.clone());
+            let new_call_id = "cidabcd1234".to_string();
+            *msg.call_id_mut().unwrap() = new_call_id.clone();
+
+            let incomplete_dialog = IncompleteDialogInfo::new(new_call_id, new_from_tag);
+            let dialog = DialogInfo::new(call_id, new_to_tag, from_tag);
+            let mut system = self.system.lock().await;
+            system.dialogs.add(dialog, incomplete_dialog);
+        }
+        Ok(Some((callee_addr, msg)))
+    }
+
+    async fn on_routed_request(&mut self, mut msg: SipMessage) -> Result<()> {
         let via_branch = if let Some(via_branch) = msg.via_header_branch() {
             via_branch.clone()
         } else {
-            warn!("route_request: no `branch` in `Via`");
-            return self.send_res(&msg, 400).await;
+            warn!("on_routed_request: no `branch` in `Via`");
+            return Ok(());
         };
         if let Some(h) = msg.via_header_mut() {
             *h = self.via_hdr_with_branch(via_branch.clone());
@@ -135,18 +193,24 @@ impl MyClient {
         if let Some(h) = msg.contact_header_mut() {
             *h = self.contact_hdr();
         }
-        self.sender
-            .send(ClientEvent::Send(callee_addr, msg))
-            .await?;
+        self.sender.send(ClientEvent::Send(self.addr, msg)).await?;
         Ok(())
     }
 
-    async fn route_response(&mut self, msg: SipMessage) -> Result<()> {
+    async fn on_routed_response(&mut self, msg: SipMessage) -> Result<()> {
+        self.sender.send(ClientEvent::Send(self.addr, msg)).await?;
+        Ok(())
+    }
+
+    async fn route_response(
+        &mut self,
+        msg: SipMessage,
+    ) -> Result<Option<(SocketAddr, SipMessage)>> {
         let caller = if let Some(caller) = msg.from_header_username() {
             caller
         } else {
             warn!("route_response: no `username` in `From`");
-            return Ok(());
+            return Ok(None);
         };
         let caller_addr = {
             let system = self.system.lock().await;
@@ -154,13 +218,10 @@ impl MyClient {
         };
         if let Some(caller_addr) = caller_addr {
             debug!("route_response: caller \"{}\" is registered", caller);
-            self.sender
-                .send(ClientEvent::Send(caller_addr, msg))
-                .await?;
-            Ok(())
+            Ok(Some((caller_addr, msg)))
         } else {
             debug!("route_response: caller \"{}\" isn't registered", caller);
-            Ok(())
+            Ok(None)
         }
     }
 
