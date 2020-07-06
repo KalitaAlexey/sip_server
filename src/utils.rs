@@ -1,6 +1,7 @@
 use crate::via_branch_generator::ViaBranchGenerator;
 use async_std::sync::Mutex;
 
+#[derive(Default)]
 pub struct Utils {
     via_branch_generator: Mutex<ViaBranchGenerator>,
 }

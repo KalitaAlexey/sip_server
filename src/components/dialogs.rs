@@ -117,18 +117,8 @@ impl Dialogs {
         server_tag: &str,
         client_tag: &str,
     ) -> Option<&Dialog> {
-        let id = self.dialogs.iter().find_map(|d| {
-            if d.call_id == call_id && d.server_tag == server_tag && d.client_tag == client_tag {
-                Some(d.id)
-            } else {
-                None
-            }
-        });
-        if let Some(id) = id {
-            self.dialog_by_id(id)
-        } else {
-            None
-        }
+        self.dialog(call_id, server_tag, client_tag)
+            .and_then(|d| self.dialog_by_id(d.linked_dialog))
     }
 
     pub fn take_incomplete_dialog(
@@ -152,10 +142,16 @@ impl Dialogs {
             id: dialog.id,
             call_id: dialog.call_id,
             server_tag: dialog.server_tag,
-            client_tag: client_tag,
+            client_tag,
             linked_dialog: dialog.linked_dialog,
         };
         self.dialogs.push(dialog);
+    }
+
+    fn dialog(&self, call_id: &str, server_tag: &str, client_tag: &str) -> Option<&Dialog> {
+        self.dialogs.iter().find(|d| {
+            d.call_id == call_id && d.server_tag == server_tag && d.client_tag == client_tag
+        })
     }
 
     fn dialog_by_id(&self, id: u32) -> Option<&Dialog> {

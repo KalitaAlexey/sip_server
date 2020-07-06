@@ -67,9 +67,16 @@ impl<'a, M: ClientManager> SocketWorker<'a, M> {
                     error!("client.on_message failed: {}", e);
                 }
             },
-            Err(e) => {
-                error!("libsip::parse_message failed: {}", e);
+            Err(nom::Err::Error(VerboseError { errors })) => {
+                for e in errors {
+                    error!(
+                        "Error {:?} happened with input {}",
+                        e.1,
+                        std::str::from_utf8(e.0).expect("from_utf8 failed")
+                    );
+                }
             }
+            Err(e) => error!("libsip::parse_message failed: {}", e),
         };
     }
 }

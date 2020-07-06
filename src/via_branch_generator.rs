@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct ViaBranchGenerator {
     counter: u64,
 }
