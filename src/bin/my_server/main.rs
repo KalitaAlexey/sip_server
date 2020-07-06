@@ -1,5 +1,4 @@
 use async_std::task;
-use futures::channel::mpsc;
 use libsip::{Domain, Transport, UriSchema};
 use sip_server::Server;
 use std::env;
@@ -30,13 +29,11 @@ fn main() {
     };
     env_logger::init();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
-    let (sender, receiver) = mpsc::unbounded();
     let manager = MyClientManager::new(
         Transport::Udp,
         UriSchema::Sip,
         Domain::Ipv4(ip, Some(port)),
-        sender,
         false,
     );
-    let _ = task::block_on(Server::run(manager, receiver, addr));
+    let _ = task::block_on(Server::run(manager, addr));
 }

@@ -1,14 +1,15 @@
 use crate::my_system::MySystem;
 use async_std::{net::SocketAddr, sync::Mutex};
 use async_trait::async_trait;
-use futures::sink::SinkExt;
 use libsip::{
     Domain, Header, Method, NamedHeader, RegisterRequestExt, RequestGenerator, ResponseGenerator,
     SipMessage, SipMessageExt, SubscriptionState, Transport, Uri, UriAuth, UriParam, UriSchema,
     ViaHeader,
 };
 use log::{debug, error};
-use sip_server::{Client, ClientEvent, DialogInfo, IncompleteDialogInfo, Result, Sender, Utils};
+use sip_server::{
+    Client, ClientEvent, ClientEventHandler, DialogInfo, IncompleteDialogInfo, Result, Utils,
+};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct MyClient {
@@ -17,7 +18,7 @@ pub struct MyClient {
     schema: UriSchema,
     domain: Domain,
     utils: Arc<Utils>,
-    sender: Sender<ClientEvent>,
+    event_handler: Box<dyn ClientEventHandler>,
     system: Arc<Mutex<MySystem>>,
     back_to_back: bool,
 }
@@ -77,7 +78,7 @@ impl MyClient {
         schema: UriSchema,
         domain: Domain,
         utils: Arc<Utils>,
-        sender: Sender<ClientEvent>,
+        event_handler: Box<dyn ClientEventHandler>,
         system: Arc<Mutex<MySystem>>,
         back_to_back: bool,
     ) -> Self {
@@ -87,7 +88,7 @@ impl MyClient {
             schema,
             domain,
             utils,
-            sender,
+            event_handler,
             system,
             back_to_back,
         }
@@ -179,9 +180,9 @@ impl MyClient {
                 }
             }
         }
-        self.sender
-            .send(ClientEvent::Send(self.addr, message))
-            .await?;
+        self.event_handler
+            .handle(ClientEvent::Send(self.addr, message))
+            .await;
         Ok(())
     }
 
@@ -209,9 +210,9 @@ impl MyClient {
                 return Ok(());
             }
         }
-        self.sender
-            .send(ClientEvent::Send(self.addr, message))
-            .await?;
+        self.event_handler
+            .handle(ClientEvent::Send(self.addr, message))
+            .await;
         Ok(())
     }
 
@@ -337,8 +338,9 @@ impl MyClient {
     }
 
     async fn send_to_client(&mut self, message: SipMessage) -> Result<()> {
-        let message = ClientEvent::Send(self.addr, message);
-        self.sender.send(message).await?;
+        self.event_handler
+            .handle(ClientEvent::Send(self.addr, message))
+            .await;
         Ok(())
     }
 
