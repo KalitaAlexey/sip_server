@@ -7,7 +7,7 @@ use libsip::{
     SipMessage, SipMessageExt, SubscriptionState, Transport, Uri, UriAuth, UriParam, UriSchema,
     ViaHeader,
 };
-use log::{debug, warn};
+use log::{debug, error};
 use sip_server::{Client, ClientEvent, DialogInfo, IncompleteDialogInfo, Result, Sender, Utils};
 use std::{collections::HashMap, sync::Arc};
 
@@ -19,6 +19,7 @@ pub struct MyClient {
     utils: Arc<Utils>,
     sender: Sender<ClientEvent>,
     system: Arc<Mutex<MySystem>>,
+    back_to_back: bool,
 }
 
 #[async_trait]
@@ -27,40 +28,36 @@ impl Client for MyClient {
         &mut self,
         message: SipMessage,
     ) -> Result<Option<(SocketAddr, SipMessage)>> {
-        let (request, method) = match &message {
-            SipMessage::Request { method, .. } => (true, *method),
-            SipMessage::Response { headers, .. } => {
-                if let Some(Header::CSeq(_, method)) = headers.cseq() {
-                    (false, method)
-                } else {
-                    warn!("no `CSeq` in response");
-                    return Ok(None);
+        if let Some(method) = message.method() {
+            if message.is_request() {
+                match method {
+                    Method::Register => {
+                        self.on_register(message).await?;
+                        Ok(None)
+                    }
+                    Method::Subscribe => {
+                        self.on_subscribe(message).await?;
+                        Ok(None)
+                    }
+                    Method::Invite | Method::Bye | Method::Ack | Method::Cancel => {
+                        self.route_request(message).await
+                    }
+                    _ => {
+                        self.on_req(message).await?;
+                        Ok(None)
+                    }
                 }
-            }
-        };
-        if request {
-            match method {
-                Method::Register => {
-                    self.on_register(message).await?;
-                    Ok(None)
-                }
-                Method::Subscribe => {
-                    self.on_subscribe(message).await?;
-                    Ok(None)
-                }
-                Method::Invite | Method::Bye | Method::Ack | Method::Cancel => {
-                    self.route_request(message).await
-                }
-                _ => {
-                    self.on_req(message).await?;
-                    Ok(None)
+            } else {
+                match method {
+                    Method::Invite | Method::Bye | Method::Cancel => {
+                        self.route_response(message).await
+                    }
+                    _ => Ok(None),
                 }
             }
         } else {
-            match method {
-                Method::Invite | Method::Bye | Method::Cancel => self.route_response(message).await,
-                _ => Ok(None),
-            }
+            error!("on_message: no method");
+            Ok(None)
         }
     }
 
@@ -82,6 +79,7 @@ impl MyClient {
         utils: Arc<Utils>,
         sender: Sender<ClientEvent>,
         system: Arc<Mutex<MySystem>>,
+        back_to_back: bool,
     ) -> Self {
         Self {
             addr,
@@ -91,6 +89,7 @@ impl MyClient {
             utils,
             sender,
             system,
+            back_to_back,
         }
     }
 
@@ -102,13 +101,13 @@ impl MyClient {
         let username = if let Some(username) = message.to_header_username() {
             username
         } else {
-            warn!("on_register: no `username` in `To`");
+            error!("on_register: no `username` in `To`");
             return self.send_res(&message, 400).await;
         };
         let expires = if let Some(expires) = message.expires() {
             expires
         } else {
-            warn!("on_register: no `Expires`");
+            error!("on_register: no `Expires`");
             return self.send_res(&message, 400).await;
         };
         self.prepare_and_send_res(&message, 200, |generator| {
@@ -131,7 +130,7 @@ impl MyClient {
         mut message: SipMessage,
     ) -> Result<Option<(SocketAddr, SipMessage)>> {
         if message.via_header_branch().is_none() {
-            warn!("route_request: no `branch` in `Via`");
+            error!("route_request: no `branch` in `Via`");
             self.send_res(&message, 400).await?;
             return Ok(None);
         };
@@ -149,11 +148,12 @@ impl MyClient {
                 return Ok(None);
             }
         } else {
-            warn!("route_request: no `username` in `To`");
+            error!("route_request: no `username` in `To`");
             self.send_res(&message, 400).await?;
             return Ok(None);
         };
-        if self.convert_request_dialog(&mut message).await? {
+        // The server should have different dialogs with clients if the server operates in Back-to-Back User Agent mode
+        if !self.back_to_back || self.convert_request_dialog(&mut message).await? {
             Ok(Some((callee_addr, message)))
         } else {
             self.send_res(&message, 400).await?;
@@ -162,17 +162,22 @@ impl MyClient {
     }
 
     async fn on_routed_request(&mut self, mut message: SipMessage) -> Result<()> {
-        let via_branch = if let Some(via_branch) = message.via_header_branch() {
-            via_branch.clone()
-        } else {
-            warn!("on_routed_request: no `branch` in `Via`");
-            return Ok(());
-        };
+        // It's checked in route_request
+        let via_branch = message.via_header_branch().unwrap().clone();
         if let Some(h) = message.via_header_mut() {
             *h = self.via_hdr_with_branch(via_branch.clone());
         }
-        if let Some(h) = message.contact_header_mut() {
-            *h = self.contact_hdr();
+        if self.back_to_back {
+            // TODO: This should be checked in route_request
+            if let Some(h) = message.contact_header_mut() {
+                *h = self.contact_hdr();
+            } else {
+                // method() is checked to exist in on_message (on_routed_message is called only if some function called from on_message asked the message to be routed)
+                if message.method().unwrap() == Method::Invite {
+                    error!("on_routed_request: no `Contact` in invite");
+                    return Ok(());
+                }
+            }
         }
         self.sender
             .send(ClientEvent::Send(self.addr, message))
@@ -181,14 +186,32 @@ impl MyClient {
     }
 
     async fn on_routed_response(&mut self, mut message: SipMessage) -> Result<()> {
-        if self.convert_response_dialog(&mut message).await {
-            if let Some(h) = message.contact_header_mut() {
-                *h = self.contact_hdr();
+        if self.back_to_back {
+            if self.convert_response_dialog(&mut message).await {
+                if let Some(h) = message.contact_header_mut() {
+                    *h = self.contact_hdr();
+                } else {
+                    // method() is checked to exist in on_message (on_routed_response is called only if some function called from on_message asked the message to be routed)
+                    if message.method().unwrap() == Method::Invite {
+                        if let Some(status_code) = message.status_code() {
+                            if status_code >= 200 && status_code <= 299 {
+                                error!("on_routed_response: no `Contact` in invite 2xx response");
+                                return Ok(());
+                            }
+                        } else {
+                            error!("on_routed_response: no status code in response");
+                            return Ok(());
+                        }
+                    }
+                }
+            } else {
+                error!("on_routed_response: convert_response_dialog failed");
+                return Ok(());
             }
-            self.sender
-                .send(ClientEvent::Send(self.addr, message))
-                .await?;
         }
+        self.sender
+            .send(ClientEvent::Send(self.addr, message))
+            .await?;
         Ok(())
     }
 
@@ -199,7 +222,7 @@ impl MyClient {
         let caller = if let Some(caller) = message.from_header_username() {
             caller
         } else {
-            warn!("route_response: no `username` in `From`");
+            error!("route_response: no `username` in `From`");
             return Ok(None);
         };
         let system = self.system.lock().await;
@@ -218,31 +241,31 @@ impl MyClient {
             let uri_username = if let Some(auth) = uri.auth {
                 auth.username
             } else {
-                warn!("on_subscribe: no `username` in uri");
+                error!("on_subscribe: no `username` in uri");
                 return Ok(());
             };
             let from_hdr = if let Some(Header::From(from_hdr)) = headers.from() {
                 from_hdr
             } else {
-                warn!("on_subscribe: no `From`");
+                error!("on_subscribe: no `From`");
                 return Ok(());
             };
             let to_hdr = if let Some(Header::To(to_hdr)) = headers.to() {
                 to_hdr.param("tag", Some("123456"))
             } else {
-                warn!("on_subscribe: no `To`");
+                error!("on_subscribe: no `To`");
                 return Ok(());
             };
             let call_id = if let Some(Header::CallId(call_id)) = headers.call_id() {
                 call_id
             } else {
-                warn!("on_subscribe: no `Call-ID`");
+                error!("on_subscribe: no `Call-ID`");
                 return Ok(());
             };
             let event = if let Some(Header::Event(event)) = headers.event() {
                 event
             } else {
-                warn!("on_subscribe: no `Event`");
+                error!("on_subscribe: no `Event`");
                 return Ok(());
             };
             let uri = Uri::new(self.schema, self.domain.clone());
@@ -327,13 +350,13 @@ impl MyClient {
             let from_tag = if let Some(from_tag) = message.from_header_tag() {
                 from_tag
             } else {
-                warn!("route_request: no `tag` in `From`");
+                error!("convert_request_dialog: no `tag` in `From`");
                 return Ok(false);
             };
             let call_id = if let Some(call_id) = message.call_id() {
                 call_id
             } else {
-                warn!("route_request: no `Call-ID`");
+                error!("convert_request_dialog: no `Call-ID`");
                 return Ok(false);
             };
             (
@@ -375,19 +398,19 @@ impl MyClient {
                 let server_tag = if let Some(server_tag) = message.from_header_tag() {
                     server_tag
                 } else {
-                    warn!("on_routed_response: no `tag` in `From`");
+                    error!("convert_response_dialog: no `tag` in `From`");
                     return false;
                 };
                 let client_tag = if let Some(client_tag) = message.to_header_tag() {
                     client_tag
                 } else {
-                    warn!("on_routed_response: no `tag` in `To`");
+                    error!("convert_response_dialog: no `tag` in `To`");
                     return false;
                 };
                 let call_id = if let Some(call_id) = message.call_id() {
                     call_id
                 } else {
-                    warn!("on_routed_response: no `Call-ID`");
+                    error!("convert_response_dialog: no `Call-ID`");
                     return false;
                 };
                 (call_id, server_tag, client_tag)
@@ -410,7 +433,7 @@ impl MyClient {
                     dialog.client_tag().clone(),
                 )
             } else {
-                warn!("on_routed_response: no linked dialog");
+                error!("convert_response_dialog: no linked dialog");
                 return false;
             }
         };

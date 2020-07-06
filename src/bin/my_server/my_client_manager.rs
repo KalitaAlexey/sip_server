@@ -15,6 +15,7 @@ pub struct MyClientManager {
     clients: HashMap<SocketAddr, MyClient>,
     utils: Arc<Utils>,
     system: Arc<Mutex<MySystem>>,
+    back_to_back: bool,
 }
 
 impl ClientManager for MyClientManager {
@@ -31,6 +32,7 @@ impl ClientManager for MyClientManager {
                     self.utils.clone(),
                     self.sender.clone(),
                     self.system.clone(),
+                    self.back_to_back,
                 );
                 entry.insert(h)
             }
@@ -45,6 +47,7 @@ impl MyClientManager {
         schema: UriSchema,
         domain: Domain,
         sender: Sender<ClientEvent>,
+        back_to_back: bool,
     ) -> Self {
         Self {
             transport,
@@ -54,6 +57,7 @@ impl MyClientManager {
             clients: HashMap::new(),
             system: Arc::new(Mutex::new(MySystem::new())),
             utils: Arc::new(Utils::new()),
+            back_to_back,
         }
     }
 }
