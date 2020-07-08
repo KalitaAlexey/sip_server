@@ -5,10 +5,10 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 mod my_client;
-mod my_client_manager;
+mod my_client_factory;
 mod my_system;
 
-use my_client_manager::MyClientManager;
+use my_client_factory::MyClientFactory;
 
 fn main() {
     let mut args = env::args();
@@ -28,12 +28,12 @@ fn main() {
         return;
     };
     env_logger::init();
-    let addr = SocketAddr::new(IpAddr::V4(ip), port);
-    let manager = MyClientManager::new(
+    let address = SocketAddr::new(IpAddr::V4(ip), port);
+    let factory = MyClientFactory::new(
         Transport::Udp,
         UriSchema::Sip,
         Domain::Ipv4(ip, Some(port)),
         false,
     );
-    let _ = task::block_on(Server::run(manager, addr));
+    let _ = task::block_on(Server::run(factory, address));
 }

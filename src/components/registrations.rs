@@ -11,13 +11,13 @@ use std::{
 ///
 /// let mut registrations = Registrations::new();
 /// let user = "joe";
-/// let addr = "192.168.0.50:44374".parse().expect("failed to parse socket addr");
+/// let address = "192.168.0.50:44374".parse().expect("failed to parse socket address");
 ///
-/// assert!(registrations.register_user(user.to_string(), addr));
+/// assert!(registrations.register_user(user.to_string(), address));
 ///
-/// assert!(!registrations.register_user(user.to_string(), addr));
+/// assert!(!registrations.register_user(user.to_string(), address));
 ///
-/// assert_eq!(registrations.user_addr(user), Some(addr));
+/// assert_eq!(registrations.user_addr(user), Some(address));
 ///
 /// assert!(registrations.unregister_user(user));
 ///
@@ -33,16 +33,16 @@ impl Registrations {
 
     /// Registers a new user or updates an existing user's address.
     /// Returns `true` if `user` is new
-    pub fn register_user(&mut self, user: String, addr: SocketAddr) -> bool {
+    pub fn register_user(&mut self, user: String, address: SocketAddr) -> bool {
         match self.0.entry(user) {
             Entry::Occupied(mut entry) => {
                 let addr_changed = {
                     let user = entry.key();
                     let current_addr = entry.get();
-                    if *current_addr != addr {
+                    if *current_addr != address {
                         info!(
                             "user \"{}\" address is changed: {} -> {}",
-                            user, current_addr, addr
+                            user, current_addr, address
                         );
                         true
                     } else {
@@ -50,13 +50,13 @@ impl Registrations {
                     }
                 };
                 if addr_changed {
-                    *entry.get_mut() = addr;
+                    *entry.get_mut() = address;
                 }
                 false
             }
             Entry::Vacant(entry) => {
-                info!("user \"{}\" is registered: {}", entry.key(), addr);
-                entry.insert(addr);
+                info!("user \"{}\" is registered: {}", entry.key(), address);
+                entry.insert(address);
                 true
             }
         }

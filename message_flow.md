@@ -1,0 +1,58 @@
+Core:
+![](https://mermaid.ink/svg/eyJjb2RlIjoic2VxdWVuY2VEaWFncmFtXG5yZWN0IHJnYigyNTUsIDI1NSwgMjU1KVxuICBcIlNvbWVDb21wb25lbnRcIi0tPj5NZXNzYWdlUm91dGVyOiBNZXNzYWdlUm91dGVyTWVzc2FnZTo6Q2xpZW50V29ya2VyXG4gIE1lc3NhZ2VSb3V0ZXItPj5NZXNzYWdlUm91dGVyOiBSZWdpc3RlcnMgQ2xpZW50V29ya2VyXG4gIFwiU29tZUNvbXBvbmVudFwiLS0-Pk1lc3NhZ2VSb3V0ZXI6IE1lc3NhZ2VSb3V0ZXJNZXNzYWdlOjpSZWNlaXZlZC9Sb3V0ZWRcbiAgTm90ZSBvdmVyIE1lc3NhZ2VSb3V0ZXIsQ2xpZW50V29ya2VyOiBTZW50IHRvIG9uZSB3aXRoIG1hdGNoaW5nIGFkZHJlc3NcbiAgTWVzc2FnZVJvdXRlci0tPj5DbGllbnRXb3JrZXI6IENsaWVudFdvcmtlck1lc3NhZ2VcbiAgQ2xpZW50V29ya2VyLT4-Q2xpZW50OiBvbl9tc2cvb25fcm91dGVkX21zZ1xuICBDbGllbnQtPj5VZHAvVGNwQ2xpZW50RXZlbnRIYW5kbGVyOiBoYW5kbGVcbiAgTm90ZSBvdmVyIFVkcC9UY3BDbGllbnRFdmVudEhhbmRsZXI6IFNlbnQgZm9yIENsaWVudEV2ZW50OjpSb3V0ZVxuICBVZHAvVGNwQ2xpZW50RXZlbnRIYW5kbGVyLS0-Pk1lc3NhZ2VSb3V0ZXI6IE1lc3NhZ2VSb3V0ZXJNZXNzYWdlXG5lbmQiLCJtZXJtYWlkIjp7InRoZW1lIjoiZGVmYXVsdCJ9LCJ1cGRhdGVFZGl0b3IiOmZhbHNlfQ)
+
+UDP:
+![](https://mermaid.ink/svg/eyJjb2RlIjoic2VxdWVuY2VEaWFncmFtXG5yZWN0IHJnYigyNTUsIDI1NSwgMjU1KVxuICBVZHBTb2NrZXRSZWFkZXItPj5VZHBTb2NrZXRSZWFkZXI6IFJlYWRzIG1lc3NhZ2VcbiAgTm90ZSBvdmVyIFVkcFNvY2tldFJlYWRlcixNZXNzYWdlUm91dGVyOiBTZW50IGZvciBuZXcgY29ubmVjdGlvblxuICBVZHBTb2NrZXRSZWFkZXItLT4-TWVzc2FnZVJvdXRlcjogTWVzc2FnZVJvdXRlck1lc3NhZ2U6OkNsaWVudFdvcmtlclxuICBVZHBTb2NrZXRSZWFkZXItLT4-TWVzc2FnZVJvdXRlcjogTWVzc2FnZVJvdXRlck1lc3NhZ2U6UmVjZWl2ZWRcbiAgTm90ZSBvdmVyIFVkcENsaWVudEV2ZW50SGFuZGxlcixVZHBTb2NrZXRXcml0ZXI6IFNlbnQgZm9yIENsaWVudEV2ZW50OjpTZW5kXG4gIFVkcENsaWVudEV2ZW50SGFuZGxlci0tPj5VZHBTb2NrZXRXcml0ZXI6IFVkcFNvY2tldFdyaXRlck1lc3NhZ2VcbmVuZCIsIm1lcm1haWQiOnsidGhlbWUiOiJkZWZhdWx0In0sInVwZGF0ZUVkaXRvciI6ZmFsc2V9)
+
+TCP:
+![](https://mermaid.ink/svg/eyJjb2RlIjoic2VxdWVuY2VEaWFncmFtXG5yZWN0IHJnYigyNTUsIDI1NSwgMjU1KVxuICBUY3BTZXJ2ZXItPj5UY3BTZXJ2ZXI6IFdhaXRzIGZvciBjb25uZWN0aW9uXG4gIFRjcFNlcnZlci0-PlRjcFN0cmVhbVdhaXRpbmdXb3JrZXI6IHJ1blxuICBUY3BTdHJlYW1XYWl0aW5nV29ya2VyLT4-VGNwU3RyZWFtV2FpdGluZ1dvcmtlcjogV2FpdHMgZm9yIHBhY2tldFxuICBUY3BTdHJlYW1XYWl0aW5nV29ya2VyLT4-VGNwU3RyZWFtV29ya2VyOiBydW5cbiAgVGNwU3RyZWFtV29ya2VyLT4-VGNwU3RyZWFtV29ya2VyOiBTcGF3bnMgY2xpZW50IHdvcmtlclxuICBUY3BTdHJlYW1Xb3JrZXItLT4-Q2xpZW50V29ya2VyOiBDbGllbnRXb3JrZXI6OlJlY2VpdmVkXG4gIFRjcFN0cmVhbVdvcmtlci0tPj5NZXNzYWdlUm91dGVyOiBNZXNzYWdlUm91dGVyTWVzc2FnZTo6Q2xpZW50V29ya2VyXG4gIFRjcFN0cmVhbVdvcmtlci0-PlRjcFN0cmVhbVJlYWRlcjogcnVuXG4gIFRjcFN0cmVhbVJlYWRlci0-PlRjcFN0cmVhbVJlYWRlcjogUmVhZHMgbWVzc2FnZVxuICBUY3BTdHJlYW1SZWFkZXItLT4-TWVzc2FnZVJvdXRlcjogTWVzc2FnZVJvdXRlck1lc3NhZ2U6OlJlY2VpdmVkXG4gIE5vdGUgb3ZlciBUY3BDbGllbnRFdmVudEhhbmRsZXIsVGNwU3RyZWFtOiBDYWxsZWQgZm9yIENsaWVudEV2ZW50OjpTZW5kXG4gIFRjcENsaWVudEV2ZW50SGFuZGxlci0-PlRjcFN0cmVhbTogd3JpdGVfYWxsXG5lbmQiLCJtZXJtYWlkIjp7InRoZW1lIjoiZGVmYXVsdCJ9LCJ1cGRhdGVFZGl0b3IiOmZhbHNlfQ)
+
+https://mermaid-js.github.io/mermaid-live-editor
+
+Core:
+```
+sequenceDiagram
+rect rgb(255, 255, 255)
+  "SomeComponent"-->>MessageRouter: MessageRouterMessage::ClientWorker
+  MessageRouter->>MessageRouter: Registers ClientWorker
+  "SomeComponent"-->>MessageRouter: MessageRouterMessage::Received/Routed
+  Note over MessageRouter,ClientWorker: Sent to one with matching address
+  MessageRouter-->>ClientWorker: ClientWorkerMessage
+  ClientWorker->>Client: on_msg/on_routed_msg
+  Client->>Udp/TcpClientEventHandler: handle
+  Note over Udp/TcpClientEventHandler: Sent for ClientEvent::Route
+  Udp/TcpClientEventHandler-->>MessageRouter: MessageRouterMessage
+end
+```
+
+UDP:
+```
+sequenceDiagram
+rect rgb(255, 255, 255)
+  UdpSocketReader->>UdpSocketReader: Reads message
+  Note over UdpSocketReader,MessageRouter: Sent for new connection
+  UdpSocketReader-->>MessageRouter: MessageRouterMessage::ClientWorker
+  UdpSocketReader-->>MessageRouter: MessageRouterMessage:Received
+  Note over UdpClientEventHandler,UdpSocketWriter: Sent for ClientEvent::Send
+  UdpClientEventHandler-->>UdpSocketWriter: UdpSocketWriterMessage
+end
+```
+
+TCP:
+```
+sequenceDiagram
+rect rgb(255, 255, 255)
+  TcpServer->>TcpServer: Waits for connection
+  TcpServer->>TcpStreamWaitingWorker: run
+  TcpStreamWaitingWorker->>TcpStreamWaitingWorker: Waits for packet
+  TcpStreamWaitingWorker->>TcpStreamWorker: run
+  TcpStreamWorker->>TcpStreamWorker: Spawns client worker
+  TcpStreamWorker-->>ClientWorker: ClientWorker::Received
+  TcpStreamWorker-->>MessageRouter: MessageRouterMessage::ClientWorker
+  TcpStreamWorker->>TcpStreamReader: run
+  TcpStreamReader->>TcpStreamReader: Reads message
+  TcpStreamReader-->>MessageRouter: MessageRouterMessage::Received
+  Note over TcpClientEventHandler,TcpStream: Called for ClientEvent::Send
+  TcpClientEventHandler->>TcpStream: write_all
+end
+```
