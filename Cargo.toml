@@ -12,6 +12,7 @@ libsip = { path = "libsip" }
 env_logger = "0.7.1"
 log = "0.4.8"
 nom = "6.0.0-alpha1"
+rand = "0.7.3"
 
 [profile.release]
 lto = true

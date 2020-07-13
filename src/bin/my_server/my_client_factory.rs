@@ -1,5 +1,5 @@
 use crate::{my_client::MyClient, my_system::MySystem};
-use async_std::{net::SocketAddr, sync::Mutex};
+use async_std::net::SocketAddr;
 use libsip::{Domain, Transport, UriSchema};
 use sip_server::{Client, ClientEventHandler, ClientFactory, Utils};
 use std::sync::Arc;
@@ -9,7 +9,7 @@ pub struct MyClientFactory {
     schema: UriSchema,
     domain: Domain,
     utils: Arc<Utils>,
-    system: Arc<Mutex<MySystem>>,
+    system: Arc<MySystem>,
     back_to_back: bool,
 }
 
@@ -43,7 +43,7 @@ impl MyClientFactory {
             transport,
             schema,
             domain,
-            system: Arc::new(Mutex::new(MySystem::new())),
+            system: Arc::new(MySystem::new()),
             utils: Arc::new(Utils::new()),
             back_to_back,
         }

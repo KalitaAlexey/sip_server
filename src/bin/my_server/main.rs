@@ -33,7 +33,7 @@ fn main() {
         Transport::Udp,
         UriSchema::Sip,
         Domain::Ipv4(ip, Some(port)),
-        false,
+        true,
     );
     let _ = task::block_on(Server::run(factory, address));
 }

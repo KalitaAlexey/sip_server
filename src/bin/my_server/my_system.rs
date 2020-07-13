@@ -1,16 +1,19 @@
-use sip_server::{Dialogs, Registrations};
+use async_std::sync::Mutex;
+use sip_server::{DialogGen, Dialogs, Registrations};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MySystem {
-    pub dialogs: Dialogs,
-    pub registrations: Registrations,
+    pub dialogs: Mutex<Dialogs>,
+    pub registrations: Mutex<Registrations>,
+    pub dialog_gen: DialogGen,
 }
 
 impl MySystem {
     pub fn new() -> Self {
         Self {
-            dialogs: Dialogs::new(),
-            registrations: Registrations::new(),
+            dialogs: Mutex::new(Dialogs::new()),
+            registrations: Mutex::new(Registrations::new()),
+            dialog_gen: DialogGen::new(),
         }
     }
 }

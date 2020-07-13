@@ -1,19 +1,3 @@
-// Request:
-//   Find a dialog with call_id and from_tag
-//     Didn't find:
-//       Add a new dialog with call_id and from_tag
-//   Has to_tag:
-//   Doesn't have to_tag:
-//     Create to_tag and respond with 100
-//     Find a receiver
-//       Found:
-//         Add a new dialog with call_id, from_tag and to_tag
-//         Create new call_id, from_tag, add a new dialog with them, link it to the previous dialog
-//         Send the request to the receiver
-//       Didn't find:
-//         Respond with 404
-//         Remove the dialog
-
 #[derive(Debug)]
 pub struct DialogInfo {
     call_id: String,

@@ -1,5 +1,5 @@
 use crate::my_system::MySystem;
-use async_std::{net::SocketAddr, sync::Mutex};
+use async_std::net::SocketAddr;
 use async_trait::async_trait;
 use libsip::{
     Domain, Header, Method, NamedHeader, RegisterRequestExt, RequestGenerator, ResponseGenerator,
@@ -19,7 +19,7 @@ pub struct MyClient<'a> {
     domain: Domain,
     utils: Arc<Utils>,
     event_handler: Box<dyn ClientEventHandler + 'a>,
-    system: Arc<Mutex<MySystem>>,
+    system: Arc<MySystem>,
     back_to_back: bool,
 }
 
@@ -40,7 +40,12 @@ impl<'a> Client for MyClient<'a> {
                 Method::Subscribe => {
                     self.on_subscribe(msg).await;
                 }
-                Method::Invite | Method::Bye | Method::Ack | Method::Cancel => {
+                Method::Invite
+                | Method::Bye
+                | Method::Ack
+                | Method::Cancel
+                | Method::Refer
+                | Method::Notify => {
                     self.route_request(msg).await;
                 }
                 _ => {
@@ -49,7 +54,7 @@ impl<'a> Client for MyClient<'a> {
             }
         } else {
             match method {
-                Method::Invite | Method::Bye | Method::Cancel => {
+                Method::Invite | Method::Bye | Method::Cancel | Method::Refer | Method::Notify => {
                     self.route_response(msg).await;
                 }
                 _ => {}
@@ -74,7 +79,7 @@ impl<'a> MyClient<'a> {
         domain: Domain,
         utils: Arc<Utils>,
         event_handler: Box<dyn ClientEventHandler + 'a>,
-        system: Arc<Mutex<MySystem>>,
+        system: Arc<MySystem>,
         back_to_back: bool,
     ) -> Self {
         Self {
@@ -112,13 +117,11 @@ impl<'a> MyClient<'a> {
             generator.header(Header::Expires(expires))
         })
         .await;
-        let mut system = self.system.lock().await;
+        let mut reg = self.system.registrations.lock().await;
         if expires > 0 {
-            system
-                .registrations
-                .register_user(username.clone(), self.address);
+            reg.register_user(username.clone(), self.address);
         } else {
-            system.registrations.unregister_user(&username);
+            reg.unregister_user(&username);
         }
     }
 
@@ -129,10 +132,7 @@ impl<'a> MyClient<'a> {
             return;
         };
         let callee_addr = if let Some(callee) = msg.to_header_username() {
-            let callee_addr = {
-                let system = self.system.lock().await;
-                system.registrations.user_addr(&callee)
-            };
+            let callee_addr = self.system.registrations.lock().await.user_addr(&callee);
             if let Some(callee_addr) = callee_addr {
                 debug!("route_request: callee \"{}\" is registered", callee);
                 callee_addr
@@ -214,8 +214,7 @@ impl<'a> MyClient<'a> {
             error!("route_response: no `username` in `From`");
             return;
         };
-        let system = self.system.lock().await;
-        if let Some(caller_addr) = system.registrations.user_addr(&caller) {
+        if let Some(caller_addr) = self.system.registrations.lock().await.user_addr(&caller) {
             debug!("route_response: caller \"{}\" is registered", caller);
             let event = ClientEvent::Route {
                 addr: caller_addr,
@@ -367,10 +366,12 @@ impl<'a> MyClient<'a> {
             )
         };
         if let Some(server_tag) = server_tag {
-            let system = self.system.lock().await;
-            if let Some(dialog) = system
-                .dialogs
-                .linked_dialog(&call_id, &server_tag, &client_tag)
+            if let Some(dialog) =
+                self.system
+                    .dialogs
+                    .lock()
+                    .await
+                    .linked_dialog(&call_id, &server_tag, &client_tag)
             {
                 *msg.call_id_mut().unwrap() = dialog.call_id().clone();
                 msg.set_from_header_tag(dialog.server_tag().clone());
@@ -378,17 +379,20 @@ impl<'a> MyClient<'a> {
             }
         } else {
             // Generate a server tag
-            let server_tag = "toabcd1234".to_string();
+            let server_tag = self.system.dialog_gen.tag();
             // This request will be sent to another client.
             // This server_tag is server-created from_tag
-            let next_dialog_server_tag = "fromabcd1234".to_string();
+            let next_dialog_server_tag = self.system.dialog_gen.tag();
             msg.set_from_header_tag(next_dialog_server_tag.clone());
-            let new_call_id = "cidabcd1234".to_string();
+            let new_call_id = self.system.dialog_gen.call_id();
             *msg.call_id_mut().unwrap() = new_call_id.clone();
             let incomplete_dialog = IncompleteDialogInfo::new(new_call_id, next_dialog_server_tag);
             let dialog = DialogInfo::new(call_id.clone(), server_tag, client_tag.clone());
-            let mut system = self.system.lock().await;
-            system.dialogs.add(dialog, incomplete_dialog);
+            self.system
+                .dialogs
+                .lock()
+                .await
+                .add(dialog, incomplete_dialog);
         }
         true
     }
@@ -416,18 +420,11 @@ impl<'a> MyClient<'a> {
                 };
                 (call_id, server_tag, client_tag)
             };
-            let mut system = self.system.lock().await;
-            if let Some(incomplete_dialog) =
-                system.dialogs.take_incomplete_dialog(call_id, server_tag)
-            {
-                system
-                    .dialogs
-                    .complete_dialog(incomplete_dialog, client_tag.clone());
+            let mut dialogs = self.system.dialogs.lock().await;
+            if let Some(incomplete_dialog) = dialogs.take_incomplete_dialog(call_id, server_tag) {
+                dialogs.complete_dialog(incomplete_dialog, client_tag.clone());
             }
-            if let Some(dialog) = system
-                .dialogs
-                .linked_dialog(call_id, server_tag, client_tag)
-            {
+            if let Some(dialog) = dialogs.linked_dialog(call_id, server_tag, client_tag) {
                 (
                     dialog.call_id().clone(),
                     dialog.server_tag().clone(),
