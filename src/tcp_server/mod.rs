@@ -15,6 +15,7 @@ pub(crate) struct TcpServer<F: 'static> {
     factory: &'static F,
     addr: SocketAddr,
     sender: Sender<MessageRouterMessage>,
+    worker_handles: Vec<JoinHandle<()>>,
 }
 
 impl<F: ClientFactory + 'static> TcpServer<F> {
@@ -27,37 +28,37 @@ impl<F: ClientFactory + 'static> TcpServer<F> {
             factory,
             addr,
             sender,
+            worker_handles: Vec::new(),
         }
     }
 
-    pub async fn run(self) {
-        let mut worker_handles = Vec::new();
-        self.listen_incoming(&mut worker_handles).await;
-        for handle in worker_handles.into_iter() {
+    pub async fn run(mut self) {
+        self.listen_incoming().await;
+        for handle in self.worker_handles.into_iter() {
             handle.await;
         }
     }
 
-    async fn listen_incoming(&self, worker_handles: &mut Vec<JoinHandle<()>>) {
+    async fn listen_incoming(&mut self) {
         let listener = TcpListener::bind(self.addr)
             .await
             .expect("failed to bind tcp listener");
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
             match stream {
-                Ok(stream) => self.on_stream(stream, worker_handles),
+                Ok(stream) => self.on_stream(stream),
                 Err(e) => error!("tcp stream error: {}", e),
             }
         }
     }
 
-    fn on_stream(&self, stream: TcpStream, worker_handles: &mut Vec<JoinHandle<()>>) {
+    fn on_stream(&mut self, stream: TcpStream) {
         match stream.peer_addr() {
             Ok(addr) => {
                 info!("new tcp connection: {}", addr);
                 let fut =
                     tcp_stream_waiting_worker::run(addr, stream, self.factory, self.sender.clone());
-                worker_handles.push(task::spawn(fut));
+                self.worker_handles.push(task::spawn(fut));
             }
             Err(e) => {
                 error!("peer_addr failed: {}", e);

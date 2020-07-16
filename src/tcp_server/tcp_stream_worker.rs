@@ -1,6 +1,6 @@
 use super::{tcp_client_event_handler::TcpClientEventHandler, tcp_stream_reader};
 use crate::{
-    client_worker::{self, ClientWorkerMessage},
+    client_worker::{ClientWorker, ClientWorkerMessage},
     message_router::MessageRouterMessage,
     ClientFactory, Sender,
 };
@@ -64,7 +64,10 @@ impl<F: ClientFactory + 'static> TcpStreamWorker<F> {
         let client = self.factory.create_client(self.addr, handler);
 
         let (sender, receiver) = mpsc::unbounded();
-        let handle = task::spawn(client_worker::run(client, receiver));
+
+        let client_worker = ClientWorker::new(client, receiver);
+        let handle = task::spawn(client_worker.run());
+
         (handle, sender)
     }
 }

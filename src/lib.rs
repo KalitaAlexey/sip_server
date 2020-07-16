@@ -3,9 +3,6 @@
 use futures::channel::mpsc;
 
 mod client;
-mod client_event;
-mod client_event_handler;
-mod client_factory;
 mod client_worker;
 mod components;
 mod message_router;
@@ -17,8 +14,10 @@ mod utils;
 mod via_branch_generator;
 
 pub use self::{
-    client::Client, client_event::ClientEvent, client_event_handler::ClientEventHandler,
-    client_factory::ClientFactory, components::*, server::Server, utils::Utils,
+    client::{Client, ClientEvent, ClientEventHandler, ClientFactory},
+    components::*,
+    server::Server,
+    utils::Utils,
     via_branch_generator::ViaBranchGenerator,
 };
 

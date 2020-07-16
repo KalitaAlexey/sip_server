@@ -2,25 +2,31 @@ use super::{
     udp_client_event_handler::UdpClientEventHandler, udp_socket_writer::UdpSocketWriterMessage,
 };
 use crate::{
-    client_worker::{self, ClientWorkerMessage},
+    client_worker::{ClientWorker, ClientWorkerMessage},
     message_router::MessageRouterMessage,
     sip_parse, ClientFactory, Sender,
 };
 use async_std::{
     net::{SocketAddr, UdpSocket},
-    task::JoinHandle,
+    task::{self, JoinHandle},
 };
 use futures::{channel::mpsc, SinkExt};
 use libsip::SipMessage;
-use log::error;
+use log::{debug, error};
 
+/// Reads a datagram from UDP socket, parses it into a SIP message and sends it to [`MessageRouter`](../../message_router/struct.MessageRouter.html)
 pub(crate) struct UdpSocketReader<'a, F> {
+    /// The socket it reads from
     socket: &'a UdpSocket,
+    /// The sender it sends SIP messages with
     message_router_sender: Sender<MessageRouterMessage>,
+    /// The sender it provides to [`UdpClientEventHandler`](../udp_client_event_handler/struct.UdpClientEventHandler.html) that is created for each new connection
     socket_writer_sender: Sender<UdpSocketWriterMessage>,
+    /// The factory it creates [`Client`](../../trait.Client.html) for each new connection
     factory: &'a F,
-    /// List of addresses of all connected clients to see if a message is received from a new client
+    /// List of addresses of all connected clients used to check if a message is received from a new connection
     client_addrs: Vec<SocketAddr>,
+    /// Handles to make sure all created client workers are done before [`run`](#method.run) finishes
     client_worker_handles: Vec<JoinHandle<()>>,
 }
 
@@ -75,6 +81,7 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
                     // Trying to parse such a packet leads to parsing error.
                     // Checking to avoid unnecessary error logs.
                     if n > 4 {
+                        debug!("received {} bytes from {}", n, addr);
                         if let Some(msg) = sip_parse::parse(&buffer[..n]) {
                             return (addr, msg);
                         } else {
@@ -83,7 +90,7 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
                     }
                 }
                 Err(e) => {
-                    error!("failed: {}", e);
+                    error!("recv_from failed: {}", e);
                 }
             }
         }
@@ -110,7 +117,8 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
 
         let (sender, receiver) = mpsc::unbounded();
 
-        let handle = async_std::task::spawn(client_worker::run(client, receiver));
+        let client_worker = ClientWorker::new(client, receiver);
+        let handle = task::spawn(client_worker.run());
         self.client_worker_handles.push(handle);
 
         sender

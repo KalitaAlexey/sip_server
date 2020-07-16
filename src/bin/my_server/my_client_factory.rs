@@ -14,11 +14,11 @@ pub struct MyClientFactory {
 }
 
 impl ClientFactory for MyClientFactory {
-    fn create_client<'a>(
+    fn create_client(
         &self,
         address: SocketAddr,
-        event_handler: Box<dyn ClientEventHandler + 'a>,
-    ) -> Box<dyn Client + 'a> {
+        event_handler: Box<dyn ClientEventHandler>,
+    ) -> Box<dyn Client> {
         Box::new(MyClient::new(
             address,
             self.transport,

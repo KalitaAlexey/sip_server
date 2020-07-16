@@ -7,14 +7,22 @@ pub(crate) enum ClientWorkerMessage {
     Routed(SipMessage),
 }
 
-pub(crate) async fn run<'a>(
-    mut client: Box<dyn Client + 'a>,
-    mut receiver: Receiver<ClientWorkerMessage>,
-) {
-    while let Some(msg) = receiver.next().await {
-        match msg {
-            ClientWorkerMessage::Received(msg) => client.on_msg(msg).await,
-            ClientWorkerMessage::Routed(msg) => client.on_routed_msg(msg).await,
+pub(crate) struct ClientWorker {
+    client: Box<dyn Client>,
+    receiver: Receiver<ClientWorkerMessage>,
+}
+
+impl ClientWorker {
+    pub fn new(client: Box<dyn Client>, receiver: Receiver<ClientWorkerMessage>) -> Self {
+        Self { client, receiver }
+    }
+
+    pub async fn run<'a>(mut self) {
+        while let Some(msg) = self.receiver.next().await {
+            match msg {
+                ClientWorkerMessage::Received(msg) => self.client.on_msg(msg).await,
+                ClientWorkerMessage::Routed(msg) => self.client.on_routed_msg(msg).await,
+            }
         }
     }
 }

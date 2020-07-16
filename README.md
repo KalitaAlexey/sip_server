@@ -7,6 +7,7 @@ SIP server or testing tool written in Rust.
     * INVITE (call, hold, resume)
     * CANCEL
     * BYE
+    * REFER (transfer)
 
 ### Usage:
 ```
@@ -16,7 +17,7 @@ cargo run <ip> <port>
 ### Limitations
 It uses [libsip] that isn't yet RFC3261-compliant. Open issues in [libsip] if the server shows any parsing errors.
 
-It works only via UDP. TCP will be done in few next days
+It accepts connections via TCP and UDP.
 
 Suggestions are really appreciated.
 
