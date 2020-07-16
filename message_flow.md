@@ -13,15 +13,15 @@ Core:
 ```
 sequenceDiagram
 rect rgb(255, 255, 255)
-  "SomeComponent"-->>MessageRouter: MessageRouterMessage::ClientWorker
-  MessageRouter->>MessageRouter: Registers ClientWorker
-  "SomeComponent"-->>MessageRouter: MessageRouterMessage::Received/Routed
-  Note over MessageRouter,ClientWorker: Sent to one with matching address
-  MessageRouter-->>ClientWorker: ClientWorkerMessage
+  "SomeComponent"-->>MsgRouter: MsgRouterMsg::ClientWorker
+  MsgRouter->>MsgRouter: Registers ClientWorker
+  "SomeComponent"-->>MsgRouter: MsgRouterMsg::Received/Routed
+  Note over MsgRouter,ClientWorker: Sent to one with matching address
+  MsgRouter-->>ClientWorker: ClientWorkerMessage
   ClientWorker->>Client: on_msg/on_routed_msg
   Client->>Udp/TcpClientEventHandler: handle
   Note over Udp/TcpClientEventHandler: Sent for ClientEvent::Route
-  Udp/TcpClientEventHandler-->>MessageRouter: MessageRouterMessage
+  Udp/TcpClientEventHandler-->>MsgRouter: MsgRouterMsg
 end
 ```
 
@@ -30,9 +30,9 @@ UDP:
 sequenceDiagram
 rect rgb(255, 255, 255)
   UdpSocketReader->>UdpSocketReader: Reads message
-  Note over UdpSocketReader,MessageRouter: Sent for new connection
-  UdpSocketReader-->>MessageRouter: MessageRouterMessage::ClientWorker
-  UdpSocketReader-->>MessageRouter: MessageRouterMessage:Received
+  Note over UdpSocketReader,MsgRouter: Sent for new connection
+  UdpSocketReader-->>MsgRouter: MsgRouterMsg::ClientWorker
+  UdpSocketReader-->>MsgRouter: MsgRouterMsg:Received
   Note over UdpClientEventHandler,UdpSocketWriter: Sent for ClientEvent::Send
   UdpClientEventHandler-->>UdpSocketWriter: UdpSocketWriterMessage
 end
@@ -48,10 +48,10 @@ rect rgb(255, 255, 255)
   TcpStreamWaitingWorker->>TcpStreamWorker: run
   TcpStreamWorker->>TcpStreamWorker: Spawns client worker
   TcpStreamWorker-->>ClientWorker: ClientWorker::Received
-  TcpStreamWorker-->>MessageRouter: MessageRouterMessage::ClientWorker
+  TcpStreamWorker-->>MsgRouter: MsgRouterMsg::ClientWorker
   TcpStreamWorker->>TcpStreamReader: run
   TcpStreamReader->>TcpStreamReader: Reads message
-  TcpStreamReader-->>MessageRouter: MessageRouterMessage::Received
+  TcpStreamReader-->>MsgRouter: MsgRouterMsg::Received
   Note over TcpClientEventHandler,TcpStream: Called for ClientEvent::Send
   TcpClientEventHandler->>TcpStream: write_all
 end

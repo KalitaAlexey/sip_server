@@ -5,27 +5,25 @@ use libsip::SipMessage;
 use log::error;
 use std::collections::{hash_map::Entry, HashMap};
 
-/// Message handled by MessageRouter
-pub(crate) enum MessageRouterMessage {
+/// Message handled by MsgRouter
+pub(crate) enum MsgRouterMsg {
     /// New client worker created
     ClientWorker {
         addr: SocketAddr,
         sender: Sender<ClientWorkerMessage>,
     },
-    /// Message received from network to be handled by client worker
-    ReceivedMessage { addr: SocketAddr, msg: SipMessage },
     /// Message routed to be handled by another client worker
     RoutedMessage { addr: SocketAddr, msg: SipMessage },
 }
 
 /// Reads incoming messages and routes them to matching clients
-pub(crate) struct MessageRouter {
-    receiver: Receiver<MessageRouterMessage>,
+pub(crate) struct MsgRouter {
+    receiver: Receiver<MsgRouterMsg>,
     senders: HashMap<SocketAddr, Sender<ClientWorkerMessage>>,
 }
 
-impl MessageRouter {
-    pub fn new(receiver: Receiver<MessageRouterMessage>) -> Self {
+impl MsgRouter {
+    pub fn new(receiver: Receiver<MsgRouterMsg>) -> Self {
         Self {
             receiver,
             senders: HashMap::new(),
@@ -35,14 +33,8 @@ impl MessageRouter {
     pub async fn run(mut self) {
         while let Some(msg) = self.receiver.next().await {
             match msg {
-                MessageRouterMessage::ClientWorker { addr, sender } => {
-                    self.add_client_worker(addr, sender)
-                }
-                MessageRouterMessage::ReceivedMessage { addr, msg } => {
-                    self.send_to_client_worker(addr, ClientWorkerMessage::Received(msg))
-                        .await;
-                }
-                MessageRouterMessage::RoutedMessage { addr, msg } => {
+                MsgRouterMsg::ClientWorker { addr, sender } => self.add_client_worker(addr, sender),
+                MsgRouterMsg::RoutedMessage { addr, msg } => {
                     self.send_to_client_worker(addr, ClientWorkerMessage::Routed(msg))
                         .await;
                 }

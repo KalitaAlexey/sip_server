@@ -5,7 +5,7 @@ use futures::channel::mpsc;
 mod client;
 mod client_worker;
 mod components;
-mod message_router;
+mod msg_router;
 mod server;
 mod sip_parse;
 mod tcp_server;

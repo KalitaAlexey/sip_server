@@ -3,7 +3,7 @@ mod udp_socket_reader;
 mod udp_socket_writer;
 
 use self::udp_socket_reader::UdpSocketReader;
-use crate::{message_router::MessageRouterMessage, ClientFactory, Sender};
+use crate::{msg_router::MsgRouterMsg, ClientFactory, Sender};
 use async_std::net::{SocketAddr, UdpSocket};
 use futures::{channel::mpsc, join};
 
@@ -13,7 +13,7 @@ impl UdpServer {
     pub async fn run<F: ClientFactory>(
         factory: &F,
         address: SocketAddr,
-        message_router_sender: Sender<MessageRouterMessage>,
+        message_router_sender: Sender<MsgRouterMsg>,
     ) {
         let socket = UdpSocket::bind(address)
             .await

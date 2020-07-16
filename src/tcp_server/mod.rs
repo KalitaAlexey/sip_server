@@ -1,4 +1,4 @@
-use crate::{message_router::MessageRouterMessage, ClientFactory, Sender};
+use crate::{msg_router::MsgRouterMsg, ClientFactory, Sender};
 use async_std::{
     net::{SocketAddr, TcpListener, TcpStream},
     task::{self, JoinHandle},
@@ -14,16 +14,12 @@ mod tcp_stream_worker;
 pub(crate) struct TcpServer<F: 'static> {
     factory: &'static F,
     addr: SocketAddr,
-    sender: Sender<MessageRouterMessage>,
+    sender: Sender<MsgRouterMsg>,
     worker_handles: Vec<JoinHandle<()>>,
 }
 
 impl<F: ClientFactory + 'static> TcpServer<F> {
-    pub fn new(
-        factory: &'static F,
-        addr: SocketAddr,
-        sender: Sender<MessageRouterMessage>,
-    ) -> Self {
+    pub fn new(factory: &'static F, addr: SocketAddr, sender: Sender<MsgRouterMsg>) -> Self {
         Self {
             factory,
             addr,

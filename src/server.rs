@@ -1,6 +1,4 @@
-use crate::{
-    message_router::MessageRouter, tcp_server::TcpServer, udp_server::UdpServer, ClientFactory,
-};
+use crate::{msg_router::MsgRouter, tcp_server::TcpServer, udp_server::UdpServer, ClientFactory};
 use async_std::net::SocketAddr;
 use futures::{channel::mpsc, join};
 
@@ -12,7 +10,7 @@ impl Server {
         F: ClientFactory + 'static,
     {
         let (sender, receiver) = mpsc::unbounded();
-        let message_router_fut = MessageRouter::new(receiver).run();
+        let message_router_fut = MsgRouter::new(receiver).run();
 
         let factory = unsafe {
             let factory: *const F = &factory;

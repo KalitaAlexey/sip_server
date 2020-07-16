@@ -1,7 +1,7 @@
 use super::{tcp_client_event_handler::TcpClientEventHandler, tcp_stream_reader};
 use crate::{
     client_worker::{ClientWorker, ClientWorkerMessage},
-    message_router::MessageRouterMessage,
+    msg_router::MsgRouterMsg,
     ClientFactory, Sender,
 };
 use async_std::{
@@ -17,7 +17,7 @@ pub(crate) struct TcpStreamWorker<F: 'static> {
     addr: SocketAddr,
     stream: Arc<TcpStream>,
     factory: &'static F,
-    sender: Sender<MessageRouterMessage>,
+    sender: Sender<MsgRouterMsg>,
 }
 
 impl<F: ClientFactory + 'static> TcpStreamWorker<F> {
@@ -25,7 +25,7 @@ impl<F: ClientFactory + 'static> TcpStreamWorker<F> {
         addr: SocketAddr,
         stream: TcpStream,
         factory: &'static F,
-        sender: Sender<MessageRouterMessage>,
+        sender: Sender<MsgRouterMsg>,
     ) -> Self {
         Self {
             addr,
@@ -43,7 +43,7 @@ impl<F: ClientFactory + 'static> TcpStreamWorker<F> {
             error!("failed to send cwm: {}", e);
         }
 
-        let mrm = MessageRouterMessage::ClientWorker {
+        let mrm = MsgRouterMsg::ClientWorker {
             addr: self.addr,
             sender: client_worker_sender.clone(),
         };

@@ -3,7 +3,7 @@ use super::{
 };
 use crate::{
     client_worker::{ClientWorker, ClientWorkerMessage},
-    message_router::MessageRouterMessage,
+    msg_router::MsgRouterMsg,
     sip_parse, ClientFactory, Sender,
 };
 use async_std::{
@@ -13,27 +13,26 @@ use async_std::{
 use futures::{channel::mpsc, SinkExt};
 use libsip::SipMessage;
 use log::{debug, error};
+use std::collections::HashMap;
 
-/// Reads a datagram from UDP socket, parses it into a SIP message and sends it to [`MessageRouter`](../../message_router/struct.MessageRouter.html)
+/// Reads a datagram from UDP socket, parses it into a SIP message and sends it to [`MsgRouter`](../../message_router/struct.MsgRouter.html)
 pub(crate) struct UdpSocketReader<'a, F> {
     /// The socket it reads from
     socket: &'a UdpSocket,
     /// The sender it sends SIP messages with
-    message_router_sender: Sender<MessageRouterMessage>,
+    message_router_sender: Sender<MsgRouterMsg>,
     /// The sender it provides to [`UdpClientEventHandler`](../udp_client_event_handler/struct.UdpClientEventHandler.html) that is created for each new connection
     socket_writer_sender: Sender<UdpSocketWriterMessage>,
     /// The factory it creates [`Client`](../../trait.Client.html) for each new connection
     factory: &'a F,
-    /// List of addresses of all connected clients used to check if a message is received from a new connection
-    client_addrs: Vec<SocketAddr>,
-    /// Handles to make sure all created client workers are done before [`run`](#method.run) finishes
-    client_worker_handles: Vec<JoinHandle<()>>,
+    /// List of connected clients used to send received messages to
+    client_workers: HashMap<SocketAddr, (Sender<ClientWorkerMessage>, JoinHandle<()>)>,
 }
 
 impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
     pub fn new(
         socket: &'a UdpSocket,
-        message_router_sender: Sender<MessageRouterMessage>,
+        message_router_sender: Sender<MsgRouterMsg>,
         socket_writer_sender: Sender<UdpSocketWriterMessage>,
         factory: &'a F,
     ) -> Self {
@@ -42,14 +41,13 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
             message_router_sender,
             socket_writer_sender,
             factory,
-            client_addrs: Vec::new(),
-            client_worker_handles: Vec::new(),
+            client_workers: HashMap::new(),
         }
     }
 
     pub async fn run(mut self) {
         self.read_msgs().await;
-        for handle in self.client_worker_handles.into_iter() {
+        for (_, (_, handle)) in self.client_workers.into_iter() {
             handle.await;
         }
     }
@@ -58,17 +56,11 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
         let mut buffer = [0; 4096];
         loop {
             let (addr, msg) = self.read_msg(&mut buffer).await;
-            if self.client_addrs.contains(&addr) {
-                let msg = MessageRouterMessage::ReceivedMessage { addr, msg };
-                self.send_to_message_router(msg).await;
-            } else {
-                let mut sender = self.create_new_client(addr).await;
-                // Received message can be sent directly to client worker since its sender is created here
-                let msg = ClientWorkerMessage::Received(msg);
-                if let Err(e) = sender.send(msg).await {
-                    error!("send failed: {}", e);
-                }
+            if !self.client_workers.contains_key(&addr) {
+                self.spawn_client_worker(addr).await;
             }
+            let (sender, _) = self.client_workers.get_mut(&addr).unwrap();
+            Self::send_to_client_worker(msg, sender).await;
         }
     }
 
@@ -96,18 +88,7 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
         }
     }
 
-    async fn create_new_client(&mut self, addr: SocketAddr) -> Sender<ClientWorkerMessage> {
-        let sender = self.create_client_worker(addr).await;
-        let msg = MessageRouterMessage::ClientWorker {
-            addr,
-            sender: sender.clone(),
-        };
-        self.send_to_message_router(msg).await;
-        self.client_addrs.push(addr);
-        sender
-    }
-
-    async fn create_client_worker(&mut self, addr: SocketAddr) -> Sender<ClientWorkerMessage> {
+    async fn spawn_client_worker(&mut self, addr: SocketAddr) {
         let event_handler = Box::new(UdpClientEventHandler::new(
             addr,
             self.message_router_sender.clone(),
@@ -119,12 +100,25 @@ impl<'a, F: ClientFactory> UdpSocketReader<'a, F> {
 
         let client_worker = ClientWorker::new(client, receiver);
         let handle = task::spawn(client_worker.run());
-        self.client_worker_handles.push(handle);
 
-        sender
+        self.register_client_worker(addr, sender.clone()).await;
+
+        self.client_workers.insert(addr, (sender, handle));
     }
 
-    async fn send_to_message_router(&mut self, msg: MessageRouterMessage) {
+    async fn send_to_client_worker(msg: SipMessage, sender: &mut Sender<ClientWorkerMessage>) {
+        let msg = ClientWorkerMessage::Received(msg);
+        if let Err(e) = sender.send(msg).await {
+            error!("send failed: {}", e);
+        }
+    }
+
+    async fn register_client_worker(
+        &mut self,
+        addr: SocketAddr,
+        sender: Sender<ClientWorkerMessage>,
+    ) {
+        let msg = MsgRouterMsg::ClientWorker { addr, sender };
         if let Err(e) = self.message_router_sender.send(msg).await {
             error!("send failed: {}", e);
         }

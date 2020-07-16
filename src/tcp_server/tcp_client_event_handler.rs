@@ -1,4 +1,4 @@
-use crate::{message_router::MessageRouterMessage, ClientEvent, ClientEventHandler, Sender};
+use crate::{msg_router::MsgRouterMsg, ClientEvent, ClientEventHandler, Sender};
 use async_std::{net::TcpStream, prelude::*, sync::Arc};
 use async_trait::async_trait;
 use futures::SinkExt;
@@ -6,11 +6,11 @@ use log::error;
 
 pub(crate) struct TcpClientEventHandler {
     stream: Arc<TcpStream>,
-    sender: Sender<MessageRouterMessage>,
+    sender: Sender<MsgRouterMsg>,
 }
 
 impl<'a> TcpClientEventHandler {
-    pub fn new(stream: Arc<TcpStream>, sender: Sender<MessageRouterMessage>) -> Self {
+    pub fn new(stream: Arc<TcpStream>, sender: Sender<MsgRouterMsg>) -> Self {
         Self { stream, sender }
     }
 }
@@ -20,7 +20,7 @@ impl ClientEventHandler for TcpClientEventHandler {
     async fn handle(&mut self, event: ClientEvent) {
         match event {
             ClientEvent::Route { addr, msg } => {
-                let msg = MessageRouterMessage::RoutedMessage { addr, msg };
+                let msg = MsgRouterMsg::RoutedMessage { addr, msg };
                 if let Err(e) = self.sender.send(msg).await {
                     error!("send failed: {}", e);
                 }
